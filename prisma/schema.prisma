@@ -1,0 +1,206 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+}
+
+enum StudyYear {
+  FIRST_YEAR
+  SECOND_YEAR
+  THIRD_YEAR
+  FOURTH_YEAR
+  
+}
+
+enum Semester {
+  FIRST
+  SECOND
+  SUMMER
+}
+
+
+enum EnrollmentStatus {
+  ENROLLED
+  DROPPED
+}
+
+enum LetterGrade {
+  A
+  B
+  C
+  D
+  F
+}
+
+model Department {
+  id          String  @id @default(uuid())
+  name        String  @unique @map("department")
+  maxStudents Int     @map("max_students")
+  minGpa      Decimal @map("min_gpa") @db.Decimal(4, 2)
+
+  students Student[]
+  courses  Course[]
+}
+
+model Student {
+  id          String    @id @default(uuid())
+  studentCode String    @unique @map("student_code")
+  nationalId  String    @unique @map("national_id")
+  fullName    String    @map("full_name")
+  currentYear StudyYear @map("current_year")
+  gpa         Decimal   @default(0.00) @db.Decimal(4, 2)
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  departmentId String?     @map("department_id")
+  department   Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+
+  enrollments Enrollment[]
+  termGpas    TermGpa[]
+  studentGpa  StudentGpa?
+}
+
+model Admin {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  createdAt DateTime @default(now()) @map("created_at")
+}
+
+model Course {
+  id          String    @id @default(uuid())
+  name        String
+  courseCode  String    @unique @map("course_code")
+  creditHours Int       @map("credit_hours")
+  yearNumber  StudyYear @map("year_number")
+
+  departments  Department[]
+  enrollments  Enrollment[]
+
+  prerequisites Course[] @relation("CoursePrerequisites")
+  requiredFor   Course[] @relation("CoursePrerequisites")
+}
+
+model Term {
+  id           String   @id @default(uuid())
+  academicYear String   @map("academic_year")
+  semester     Semester
+  isActive     Boolean  @default(false) @map("is_active")
+
+  enrollments         Enrollment[]
+  termGpas            TermGpa[]
+  registrationWindows RegistrationWindow[]
+
+  @@unique([academicYear, semester])
+}
+
+model RegistrationWindow {
+  id     String    @id @default(uuid())
+  termId String    @map("term_id")
+  year   StudyYear
+
+  startDate DateTime @map("start_date")
+  endDate   DateTime @map("end_date")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  term Term @relation(fields: [termId], references: [id], onDelete: Cascade)
+
+  @@unique([termId, year])
+  @@map("registration_windows")
+}
+
+model Enrollment {
+  id String @id @default(uuid())
+
+  studentId String @map("student_id")
+  courseId  String @map("course_id")
+  termId    String @map("term_id")
+
+  status    EnrollmentStatus @default(ENROLLED)
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  course  Course  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  term    Term    @relation(fields: [termId], references: [id], onDelete: Cascade)
+
+  grade Grade?
+
+  @@unique([studentId, courseId, termId])
+  @@index([studentId])
+  @@index([courseId])
+  @@index([termId])
+}
+
+model Grade {
+  id           String @id @default(uuid())
+  enrollmentId String @unique @map("enrollment_id")
+
+  letterGrade LetterGrade @map("letter_grade")
+  score       Int         @map("score")
+  gpaPoints   Decimal     @map("gpa_points") @db.Decimal(4, 2)
+
+  isLocked  Boolean  @default(false) @map("is_locked")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  enrollment Enrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+
+  @@index([letterGrade])
+  @@map("grades")
+}
+
+model TermGpa {
+  id        String @id @default(uuid())
+  studentId String @map("student_id")
+  termId    String @map("term_id")
+
+  gpa          Decimal @db.Decimal(4, 2)
+  totalCredits Int     @map("total_credits")
+
+  isLocked  Boolean  @default(false) @map("is_locked")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  term    Term    @relation(fields: [termId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, termId])
+  @@index([termId])
+  @@map("term_gpa")
+}
+
+model StudentGpa {
+  id        String @id @default(uuid())
+  studentId String @unique @map("student_id")
+
+  cumulativeGpa Decimal @map("cumulative_gpa") @db.Decimal(4, 2)
+  totalCredits  Int     @map("total_credits")
+
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@map("student_gpa")
+}
+
+model CreditRule {
+  id         String   @id @default(uuid())
+  minGpa     Decimal  @map("min_gpa") @db.Decimal(4, 2)
+  maxGpa     Decimal? @map("max_gpa") @db.Decimal(4, 2)
+  maxCredits Int      @map("max_credits")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@map("credit_rules")
+}
+
+model GradeScale {
+  letterGrade LetterGrade @id  
+  minScore    Decimal
+  maxScore    Decimal 
+  gpaPoints   Decimal 
+}
