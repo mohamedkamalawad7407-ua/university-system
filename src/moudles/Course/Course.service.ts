@@ -6,7 +6,7 @@ import { createCourseSchemaType, updateCourseSchemaType } from "./Course.validat
 const prisma = new PrismaClient();
 
 class CourseService {
-  // ============ CREATE ============
+
   createCourse = async (req: Request, res: Response, next: NextFunction) => {
     const {
       name,
@@ -29,7 +29,7 @@ class CourseService {
       }
     }
 
-    // تحقق من الـ prerequisites لو موجودة
+
     if (prerequisiteIds?.length) {
       const prereqs = await prisma.course.findMany({
         where: { id: { in: prerequisiteIds } },
@@ -62,7 +62,7 @@ class CourseService {
     return res.status(201).json({ message: "course created", course });
   };
 
-  // ============ GET ALL ============
+
   getAllCourses = async (req: Request, res: Response, next: NextFunction) => {
     const courses = await prisma.course.findMany({
       include: { departments: true, prerequisites: true },
@@ -71,7 +71,7 @@ class CourseService {
     return res.status(200).json({ courses });
   };
 
-  // ============ GET ONE ============
+
   getCourse = async (req: Request, res: Response, next: NextFunction) => {
     const { id } = req.params;
 
@@ -84,7 +84,7 @@ class CourseService {
     return res.status(200).json({ course });
   };
 
-  // ============ UPDATE ============
+
   updateCourse = async (req: Request, res: Response, next: NextFunction) => {
     const { id } = req.params;
     const {
@@ -137,7 +137,7 @@ class CourseService {
     return res.status(200).json({ message: "course updated", course: updated });
   };
 
-  // ============ DELETE ============
+
   deleteCourse = async (req: Request, res: Response, next: NextFunction) => {
     const { id } = req.params;
 

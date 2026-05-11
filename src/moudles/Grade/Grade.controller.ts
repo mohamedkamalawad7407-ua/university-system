@@ -4,16 +4,26 @@ import { validation } from "../../middleware/validation";
 import * as GV from "./Grade.validation";
 import { authentication } from "../../middleware/authentication";
 import { authorization } from "../../middleware/authorization";
+import multer from "multer";
 
 const gradeRouter = Router();
+const upload = multer({ storage: multer.memoryStorage() });
 
-// Admin
+
 gradeRouter.post(
   "/",
   authentication(),
   authorization("admin"),
   validation(GV.addGradeSchema),
   GS.addGrade
+);
+
+gradeRouter.post(
+  "/bulk",
+  authentication(),
+  authorization("admin"),
+  upload.single("file"),
+  GS.addGradesBulk
 );
 
 gradeRouter.patch(
@@ -45,7 +55,7 @@ gradeRouter.get(
   GS.getGradesByTerm
 );
 
-// Student
+
 gradeRouter.get(
   "/my",
   authentication(),

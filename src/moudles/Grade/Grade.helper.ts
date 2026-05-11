@@ -1,10 +1,9 @@
-import { LetterGrade } from "@prisma/client";
 
-// بيجيب الـ letter grade والـ GPA points من الـ GradeScale بناءً على الدرجة الرقمية
+
 export const resolveGradeFromScale = async (
   score: number,
   prisma: any
-): Promise<{ letterGrade: LetterGrade; gpaPoints: number }> => {
+): Promise<{ letterGrade: string; gpaPoints: number }> => {
   const scale = await prisma.gradeScale.findFirst({
     where: {
       minScore: { lte: score },
@@ -24,7 +23,7 @@ export const resolveGradeFromScale = async (
   };
 };
 
-// حساب الـ GPA = مجموع (النقاط × الساعات) / مجموع الساعات
+
 export const calculateGpa = (
   courses: { gpaPoints: number; creditHours: number }[]
 ): number => {

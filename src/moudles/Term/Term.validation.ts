@@ -8,7 +8,7 @@ export const createTermSchema = {
       .trim()
       .regex(/^\d{4}\/\d{4}$/, "format must be YYYY/YYYY like 2024/2025"),
     semester: z.nativeEnum(Semester),
-    // نافذة تسجيل لكل سنة دراسية
+
     registrationWindows: z
       .array(
         z.object({
@@ -41,5 +41,19 @@ export const updateRegistrationWindowSchema = {
   }),
 };
 
+export const addCoursesToTermSchema = {
+  body: z.object({
+    courseIds: z.array(z.string().uuid()).min(1, "at least one courseId required"),
+  }),
+};
+
+export const removeCoursesFromTermSchema = {
+  body: z.object({
+    courseIds: z.array(z.string().uuid()).min(1, "at least one courseId required"),
+  }),
+};
+
 export type createTermSchemaType = z.infer<typeof createTermSchema.body>;
 export type updateRegistrationWindowSchemaType = z.infer<typeof updateRegistrationWindowSchema.body>;
+export type addCoursesToTermSchemaType = z.infer<typeof addCoursesToTermSchema.body>;
+export type removeCoursesFromTermSchemaType = z.infer<typeof removeCoursesFromTermSchema.body>;

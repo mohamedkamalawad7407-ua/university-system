@@ -9,24 +9,24 @@ import { updateRegistrationWindowSchemaType } from "./Term.validation";
 const prisma = new PrismaClient();
 
 class TermService {
-  // ============ CREATE TERM + REGISTRATION WINDOWS ============
+
   createTerm = async (req: Request, res: Response, next: NextFunction) => {
     const { academicYear, semester, registrationWindows }: createTermSchemaType = req.body;
 
-    // تأكد مفيش ترم متكرر
+
     const exists = await prisma.term.findUnique({
       where: { academicYear_semester: { academicYear, semester } },
     });
     if (exists) throw new AppError("term already exists", 409);
 
-    // تحقق ان مفيش dates متداخلة في الـ windows
+
     for (const w of registrationWindows) {
       if (new Date(w.endDate) <= new Date(w.startDate)) {
         throw new AppError(`window for ${w.year}: endDate must be after startDate`, 400);
       }
     }
 
-    // create الترم + الـ windows في transaction
+
     const term = await prisma.$transaction(async (tx) => {
       const newTerm = await tx.term.create({
         data: {
@@ -58,7 +58,7 @@ class TermService {
     return res.status(201).json({ message: "term created", term });
   };
 
-  // ============ GET ALL TERMS ============
+
   getAllTerms = async (req: Request, res: Response, next: NextFunction) => {
     const terms = await prisma.term.findMany({
       include: {
@@ -70,7 +70,7 @@ class TermService {
     return res.status(200).json({ terms });
   };
 
-  // ============ GET ONE TERM ============
+
   getTerm = async (req: Request, res: Response, next: NextFunction) => {
     const { id } = req.params;
 
@@ -83,7 +83,7 @@ class TermService {
     });
     if (!term) throw new AppError("term not found", 404);
 
-    // حالة التسجيل الحالية لكل سنة
+
     const now = new Date();
     const windowsStatus = term.registrationWindows.map((w: any) => ({
       year: w.year,
@@ -100,7 +100,7 @@ class TermService {
     return res.status(200).json({ term: { ...term, windowsStatus } });
   };
 
-  // ============ OPEN TERM ============
+
   openTerm = async (req: Request, res: Response, next: NextFunction) => {
     const { id } = req.params;
 
@@ -111,12 +111,12 @@ class TermService {
     if (!term) throw new AppError("term not found", 404);
     if (term.isActive) throw new AppError("term is already open", 400);
 
-    // لازم يكون فيه على الأقل window واحدة
+
     if (term.registrationWindows.length === 0) {
       throw new AppError("cannot open term without registration windows", 400);
     }
 
-    // لازم يكون في ترم واحد بس مفتوح
+
     const activeTerm = await prisma.term.findFirst({ where: { isActive: true } });
     if (activeTerm) {
       throw new AppError(
@@ -134,7 +134,7 @@ class TermService {
     return res.status(200).json({ message: "term opened successfully", term: updated });
   };
 
-  // ============ CLOSE TERM ============
+
   closeTerm = async (req: Request, res: Response, next: NextFunction) => {
     const { id } = req.params;
 
@@ -150,7 +150,7 @@ class TermService {
     return res.status(200).json({ message: "term closed successfully", term: updated });
   };
 
-  // ============ UPDATE REGISTRATION WINDOW ============
+
   updateRegistrationWindow = async (req: Request, res: Response, next: NextFunction) => {
     const { termId } = req.params;
     const { year, startDate, endDate }: updateRegistrationWindowSchemaType = req.body;
@@ -174,7 +174,7 @@ class TermService {
     return res.status(200).json({ message: "registration window updated", window: updated });
   };
 
-  // ============ ADD REGISTRATION WINDOW ============
+
   addRegistrationWindow = async (req: Request, res: Response, next: NextFunction) => {
     const { termId } = req.params;
     const { year, startDate, endDate }: updateRegistrationWindowSchemaType = req.body;
@@ -199,7 +199,7 @@ class TermService {
     return res.status(201).json({ message: "registration window added", window });
   };
 
-  // ============ DELETE TERM ============
+
   deleteTerm = async (req: Request, res: Response, next: NextFunction) => {
     const { id } = req.params;
 
@@ -211,7 +211,7 @@ class TermService {
     return res.status(200).json({ message: "term deleted" });
   };
 
-  // ============ GET ACTIVE TERM (Student) ============
+
   getActiveTerm = async (req: Request, res: Response, next: NextFunction) => {
     const activeTerm = await prisma.term.findFirst({
       where: { isActive: true },
@@ -242,6 +242,95 @@ class TermService {
         ...activeTerm,
         windowsStatus,
       },
+    });
+  };
+
+
+  addCoursesToTerm = async (req: Request, res: Response, next: NextFunction) => {
+    const { termId } = req.params;
+    const { courseIds }: { courseIds: string[] } = req.body;
+
+    const term = await prisma.term.findUnique({ where: { id: termId as string } });
+    if (!term) throw new AppError("term not found", 404);
+
+
+    const courses = await prisma.course.findMany({
+      where: { id: { in: courseIds } },
+    });
+    if (courses.length !== courseIds.length) {
+      const foundIds = courses.map((c) => c.id);
+      const missing = courseIds.filter((id) => !foundIds.includes(id));
+      throw new AppError(`courses not found: ${missing.join(", ")}`, 404);
+    }
+
+
+    const existing = await prisma.termCourse.findMany({
+      where: { termId: termId as string, courseId: { in: courseIds } },
+    });
+    if (existing.length > 0) {
+      const existingIds = existing.map((e) => e.courseId);
+      throw new AppError(
+        `courses already added to this term: ${existingIds.join(", ")}`,
+        409
+      );
+    }
+
+    await prisma.termCourse.createMany({
+      data: courseIds.map((courseId) => ({ termId: termId as string, courseId })),
+    });
+
+    const termCourses = await prisma.termCourse.findMany({
+      where: { termId: termId as string },
+      include: { course: true },
+    });
+
+    return res.status(201).json({
+      message: `${courseIds.length} course(s) added to term`,
+      count: termCourses.length,
+      courses: termCourses.map((tc) => tc.course),
+    });
+  };
+
+
+  removeCoursesFromTerm = async (req: Request, res: Response, next: NextFunction) => {
+    const { termId } = req.params;
+    const { courseIds }: { courseIds: string[] } = req.body;
+
+    const term = await prisma.term.findUnique({ where: { id: termId as string } });
+    if (!term) throw new AppError("term not found", 404);
+
+    const result = await prisma.termCourse.deleteMany({
+      where: { termId: termId as string, courseId: { in: courseIds } },
+    });
+
+    if (result.count === 0) {
+      throw new AppError("none of the specified courses were found in this term", 404);
+    }
+
+    return res.status(200).json({
+      message: `${result.count} course(s) removed from term`,
+    });
+  };
+
+
+  getTermCourses = async (req: Request, res: Response, next: NextFunction) => {
+    const { termId } = req.params;
+
+    const term = await prisma.term.findUnique({ where: { id: termId as string } });
+    if (!term) throw new AppError("term not found", 404);
+
+    const termCourses = await prisma.termCourse.findMany({
+      where: { termId: termId as string },
+      include: {
+        course: {
+          include: { departments: true },
+        },
+      },
+    });
+
+    return res.status(200).json({
+      count: termCourses.length,
+      courses: termCourses.map((tc) => tc.course),
     });
   };
 }

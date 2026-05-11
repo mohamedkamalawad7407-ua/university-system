@@ -10,7 +10,7 @@ import {
 const prisma = new PrismaClient();
 
 class DepartmentService {
-  // ============ CREATE ============
+
   createDepartment = async (req: Request, res: Response, next: NextFunction) => {
     const { name, maxStudents, minGpa }: createDepartmentSchemaType = req.body;
 
@@ -24,7 +24,7 @@ class DepartmentService {
     return res.status(201).json({ message: "department created", department });
   };
 
-  // ============ GET ALL ============
+
   getAllDepartments = async (req: Request, res: Response, next: NextFunction) => {
     const departments = await prisma.department.findMany({
       include: {
@@ -36,7 +36,7 @@ class DepartmentService {
     return res.status(200).json({ departments });
   };
 
-  // ============ GET ONE ============
+
   getDepartment = async (req: Request, res: Response, next: NextFunction) => {
     const { id } = req.params;
 
@@ -62,7 +62,7 @@ class DepartmentService {
     return res.status(200).json({ department });
   };
 
-  // ============ UPDATE ============
+
   updateDepartment = async (req: Request, res: Response, next: NextFunction) => {
     const { id } = req.params;
     const { name, maxStudents, minGpa }: updateDepartmentSchemaType = req.body;
@@ -97,7 +97,7 @@ class DepartmentService {
     return res.status(200).json({ message: "department updated", department: updated });
   };
 
-  // ============ DELETE ============
+
   deleteDepartment = async (req: Request, res: Response, next: NextFunction) => {
     const { id } = req.params;
 
@@ -118,7 +118,7 @@ class DepartmentService {
     return res.status(200).json({ message: "department deleted" });
   };
 
-  // ============ ASSIGN STUDENT TO DEPARTMENT ============
+
   assignStudent = async (req: Request, res: Response, next: NextFunction) => {
     const { studentId, departmentId }: assignStudentSchemaType = req.body;
 
@@ -142,8 +142,8 @@ class DepartmentService {
 
     const studentGpa = Number(student.studentGpa?.cumulativeGpa ?? 0);
     const minGpa = Number(department.minGpa);
-    
-    // يسمح لطلاب السنة الأولى بالدخول للقسم حتى لو المعدل أقل من المطلوب (لحالات أقسام الكريديت)
+
+
     if (student.currentYear !== "FIRST_YEAR" && studentGpa < minGpa) {
       throw new AppError(
         `student GPA ${studentGpa} is below department minimum ${minGpa}`,
@@ -167,7 +167,7 @@ class DepartmentService {
     return res.status(200).json({ message: "student assigned to department", student: updated });
   };
 
-  // ============ REMOVE STUDENT FROM DEPARTMENT ============
+
   removeStudent = async (req: Request, res: Response, next: NextFunction) => {
     const { studentId } = req.params;
 
@@ -191,7 +191,7 @@ class DepartmentService {
     return res.status(200).json({ message: "student removed from department", student: updated });
   };
 
-  // ============ GET DEPARTMENT STATS ============
+
   getDepartmentStats = async (req: Request, res: Response, next: NextFunction) => {
     const { id } = req.params;
 

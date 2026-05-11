@@ -14,7 +14,7 @@ export enum TokenType{
 
 export const generateToken = async({payload , signature , options}: {
     payload : Object,
-    signature : string, 
+    signature : string,
     options? : jwt.SignOptions
 }) : Promise<string> =>{
     return jwt.sign(payload , signature , options)
@@ -22,7 +22,7 @@ export const generateToken = async({payload , signature , options}: {
 
 export const verifyToken = async({token , signature }:{
     token : string,
-    signature : string, 
+    signature : string,
 }):Promise <JwtPayload>=>{
     return jwt.verify(token , signature) as JwtPayload
 }
@@ -47,7 +47,7 @@ export const decodedTokenAndFetchUser = async (token : string , signature : stri
         }
 
         let user: any = await prisma.admin.findUnique({ where: { id: decoded.id as string } });
-        
+
         if (user) {
             user.role = "admin";
         } else {

@@ -15,6 +15,7 @@ import gradeRouter from "./moudles/Grade/Grade.controller"
 import gradeScaleRouter from "./moudles/Gradescale/Gradescale.controller"
 import departmentRouter from "./moudles/Department/Department.controller"
 import creditRuleRouter from "./moudles/Creditrule/Creditrule.controller"
+import promotionRouter from "./moudles/Promotion/Promotion.controller"
 
 
 
@@ -23,10 +24,10 @@ const app:express.Application = express()
 const port : string | number = process.env.PORT || 5000
 
 const limiter = rateLimit({
-	windowMs: 5 * 60 * 1000, 
+	windowMs: 5 * 60 * 1000,
 	limit: 100,
-	standardHeaders: 'draft-8', 
-	legacyHeaders: false, 
+	standardHeaders: 'draft-8',
+	legacyHeaders: false,
 	ipv6Subnet: 56,
 })
 
@@ -47,6 +48,7 @@ const bootStrap = ()=>{
     app.use("/grade-scale", gradeScaleRouter);
     app.use("/department", departmentRouter);
     app.use("/credit-rules", creditRuleRouter);
+    app.use("/promotion", promotionRouter);
 
 
     app.get("/",(req:Request,res:Response,next:NextFunction)=>{
@@ -67,7 +69,7 @@ const bootStrap = ()=>{
 
     app.listen(port, ()=>{
         console.log(`server is running on port ${port} `);
-        
+
     })
 }
 

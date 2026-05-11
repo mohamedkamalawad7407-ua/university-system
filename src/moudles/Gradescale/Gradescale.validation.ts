@@ -1,8 +1,13 @@
 import z from "zod";
 
+const letterGradeSchema = z.string()
+  .trim()
+  .toUpperCase()
+  .regex(/^[A-F][+-]?$/, "Invalid Grade format (e.g. A+, B, C-)");
+
 export const createGradeScaleSchema = {
   body: z.object({
-    letterGrade: z.string().trim().toUpperCase(),
+    letterGrade: letterGradeSchema,
     minScore: z.number().min(0).max(100),
     maxScore: z.number().min(0).max(100),
     gpaPoints: z.number().min(0).max(4),
@@ -13,20 +18,20 @@ export const createGradeScaleSchema = {
 
 export const updateGradeScaleSchema = {
   body: z.object({
-    letterGrade: z.string().trim().toUpperCase().optional(),
+    letterGrade: letterGradeSchema.optional(),
     minScore: z.number().min(0).max(100).optional(),
     maxScore: z.number().min(0).max(100).optional(),
     gpaPoints: z.number().min(0).max(4).optional(),
   }),
 };
 
-// bulk create — الأدمن يرفع كل الـ scale دفعة واحدة
+
 export const bulkCreateGradeScaleSchema = {
   body: z.object({
     scales: z
       .array(
         z.object({
-          letterGrade: z.string().trim().toUpperCase(),
+          letterGrade: letterGradeSchema,
           minScore: z.number().min(0).max(100),
           maxScore: z.number().min(0).max(100),
           gpaPoints: z.number().min(0).max(4),

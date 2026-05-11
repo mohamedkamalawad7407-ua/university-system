@@ -9,37 +9,46 @@ import {
 const prisma = new PrismaClient();
 
 class CreditRuleService {
-  // ============ CREATE ============
+
   createRule = async (req: Request, res: Response, next: NextFunction) => {
-    const { minGpa, maxGpa, maxCredits }: createCreditRuleSchemaType = req.body;
+    const { minGpa, maxGpa, maxCredits, isForNewStudents }: createCreditRuleSchemaType = req.body;
 
-    // تأكد مفيش overlap مع rules موجودة
-    const overlapping = await prisma.creditRule.findFirst({
-      where: {
-        AND: [
-          { minGpa: { lte: maxGpa ?? 4 } },
-          {
-            OR: [{ maxGpa: null }, { maxGpa: { gte: minGpa } }],
-          },
-        ],
-      },
-    });
+    if (!isForNewStudents) {
+      const overlapping = await prisma.creditRule.findFirst({
+        where: {
+          isForNewStudents: false,
+          AND: [
+            { minGpa: { lte: maxGpa ?? 4 } },
+            {
+              OR: [{ maxGpa: null }, { maxGpa: { gte: minGpa } }],
+            },
+          ],
+        },
+      });
 
-    if (overlapping) {
-      throw new AppError(
-        `GPA range overlaps with existing rule (${overlapping.minGpa} - ${overlapping.maxGpa ?? "∞"})`,
-        409
-      );
+      if (overlapping) {
+        throw new AppError(
+          `GPA range overlaps with existing rule (${overlapping.minGpa} - ${overlapping.maxGpa ?? "∞"})`,
+          409
+        );
+      }
+    }
+
+    if (isForNewStudents) {
+      await prisma.creditRule.updateMany({
+        where: { isForNewStudents: true },
+        data: { isForNewStudents: false },
+      });
     }
 
     const rule = await prisma.creditRule.create({
-      data: { minGpa, maxGpa: maxGpa ?? null, maxCredits },
+      data: { minGpa, maxGpa: maxGpa ?? null, maxCredits, isForNewStudents: isForNewStudents ?? false },
     });
 
     return res.status(201).json({ message: "credit rule created", rule });
   };
 
-  // ============ GET ALL ============
+
   getAllRules = async (req: Request, res: Response, next: NextFunction) => {
     const rules = await prisma.creditRule.findMany({
       orderBy: { minGpa: "asc" },
@@ -47,13 +56,20 @@ class CreditRuleService {
     return res.status(200).json({ rules });
   };
 
-  // ============ UPDATE ============
+
   updateRule = async (req: Request, res: Response, next: NextFunction) => {
     const { id } = req.params;
-    const { minGpa, maxGpa, maxCredits }: updateCreditRuleSchemaType = req.body;
+    const { minGpa, maxGpa, maxCredits, isForNewStudents }: updateCreditRuleSchemaType = req.body;
 
     const rule = await prisma.creditRule.findUnique({ where: { id: id as string} });
     if (!rule) throw new AppError("credit rule not found", 404);
+
+    if (isForNewStudents) {
+      await prisma.creditRule.updateMany({
+        where: { isForNewStudents: true, id: { not: id as string } },
+        data: { isForNewStudents: false },
+      });
+    }
 
     const updated = await prisma.creditRule.update({
       where: { id: id as string },
@@ -61,13 +77,14 @@ class CreditRuleService {
         ...(minGpa !== undefined && { minGpa }),
         ...(maxGpa !== undefined && { maxGpa }),
         ...(maxCredits !== undefined && { maxCredits }),
+        ...(isForNewStudents !== undefined && { isForNewStudents }),
       },
     });
 
     return res.status(200).json({ message: "credit rule updated", rule: updated });
   };
 
-  // ============ DELETE ============
+
   deleteRule = async (req: Request, res: Response, next: NextFunction) => {
     const { id } = req.params;
 

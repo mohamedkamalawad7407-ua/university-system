@@ -12,7 +12,7 @@ enum StudyYear {
   SECOND_YEAR
   THIRD_YEAR
   FOURTH_YEAR
-  
+
 }
 
 enum Semester {
@@ -27,13 +27,8 @@ enum EnrollmentStatus {
   DROPPED
 }
 
-enum LetterGrade {
-  A
-  B
-  C
-  D
-  F
-}
+
+
 
 model Department {
   id          String  @id @default(uuid())
@@ -78,6 +73,7 @@ model Course {
 
   departments  Department[]
   enrollments  Enrollment[]
+  termCourses  TermCourse[]
 
   prerequisites Course[] @relation("CoursePrerequisites")
   requiredFor   Course[] @relation("CoursePrerequisites")
@@ -92,6 +88,7 @@ model Term {
   enrollments         Enrollment[]
   termGpas            TermGpa[]
   registrationWindows RegistrationWindow[]
+  termCourses         TermCourse[]
 
   @@unique([academicYear, semester])
 }
@@ -139,9 +136,9 @@ model Grade {
   id           String @id @default(uuid())
   enrollmentId String @unique @map("enrollment_id")
 
-  letterGrade LetterGrade @map("letter_grade")
-  score       Int         @map("score")
-  gpaPoints   Decimal     @map("gpa_points") @db.Decimal(4, 2)
+  letterGrade String @map("letter_grade")
+  score       Int    @map("score")
+  gpaPoints   Decimal @map("gpa_points") @db.Decimal(4, 2)
 
   isLocked  Boolean  @default(false) @map("is_locked")
   createdAt DateTime @default(now()) @map("created_at")
@@ -195,12 +192,36 @@ model CreditRule {
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
 
+  isForNewStudents Boolean @default(false) @map("is_for_new_students")
+
   @@map("credit_rules")
 }
 
 model GradeScale {
-  letterGrade LetterGrade @id  
+  letterGrade String @id
   minScore    Decimal
-  maxScore    Decimal 
-  gpaPoints   Decimal 
+  maxScore    Decimal
+  gpaPoints   Decimal
+}
+
+model TermCourse {
+  id       String @id @default(uuid())
+  termId   String @map("term_id")
+  courseId String @map("course_id")
+
+  term   Term   @relation(fields: [termId], references: [id], onDelete: Cascade)
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([termId, courseId])
+  @@map("term_courses")
+}
+
+model PromotionRule {
+  id         String    @id @default(uuid())
+  fromYear   StudyYear @unique @map("from_year")
+  minCredits Int       @map("min_credits")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  @@map("promotion_rules")
 }

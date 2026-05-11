@@ -2,7 +2,7 @@ import z, { ZodType } from "zod"
 import { Request , Response , NextFunction } from "express"
 import { AppError } from "../utils/classError"
 
- 
+
 type ReqType = keyof Request
 type schemaType = Partial <Record<ReqType,ZodType>>
 
@@ -13,7 +13,7 @@ export const validation = (schema : schemaType)=>{
        const validationErrors = []
         for(const key of Object.keys(schema) as ReqType[] ){
             if(!schema[key]) continue
-        
+
         const result = schema[key].safeParse(req[key]);
           if (!result.success) {
              validationErrors.push(result.error)

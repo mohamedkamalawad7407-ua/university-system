@@ -9,10 +9,10 @@ import multer from "multer";
 const studentRouter = Router();
 const upload = multer({ storage: multer.memoryStorage() });
 
-// Public
+
 studentRouter.post("/signin", validation(SV.signinStudentSchema), SS.signin);
 
-// Student only
+
 studentRouter.get(
   "/profile/me",
   authentication(),
@@ -20,7 +20,7 @@ studentRouter.get(
   SS.getProfile
 );
 
-// Admin only
+
 studentRouter.post(
   "/",
   authentication(),

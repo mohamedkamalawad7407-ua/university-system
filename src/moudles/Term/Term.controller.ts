@@ -7,7 +7,7 @@ import { authorization } from "../../middleware/authorization";
 
 const termRouter = Router();
 
-// Admin
+
 termRouter.post(
   "/",
   authentication(),
@@ -51,7 +51,7 @@ termRouter.patch(
   TS.closeTerm
 );
 
-// إضافة أو تعديل نافذة تسجيل
+
 termRouter.post(
   "/:termId/windows",
   authentication(),
@@ -73,6 +73,30 @@ termRouter.delete(
   authentication(),
   authorization("admin"),
   TS.deleteTerm
+);
+
+
+termRouter.post(
+  "/:termId/courses",
+  authentication(),
+  authorization("admin"),
+  validation(TV.addCoursesToTermSchema),
+  TS.addCoursesToTerm
+);
+
+termRouter.delete(
+  "/:termId/courses",
+  authentication(),
+  authorization("admin"),
+  validation(TV.removeCoursesFromTermSchema),
+  TS.removeCoursesFromTerm
+);
+
+termRouter.get(
+  "/:termId/courses",
+  authentication(),
+  authorization("admin", "student"),
+  TS.getTermCourses
 );
 
 export default termRouter;

@@ -8,7 +8,7 @@ const { PDFParse } = require("pdf-parse");
 const prisma = new PrismaClient();
 
 class StudentService {
-  // ============ SIGNIN ============
+
   signin = async (req: Request, res: Response, next: NextFunction) => {
     const { studentCode, nationalId }: signinStudentSchemaType = req.body;
 
@@ -31,7 +31,7 @@ class StudentService {
     return res.status(200).json({ message: "signin success", token });
   };
 
-  // ============ ADD ONE STUDENT (Admin) ============
+
   addStudent = async (req: Request, res: Response, next: NextFunction) => {
     const { studentCode, nationalId, fullName, currentYear, departmentId }: addStudentSchemaType =
       req.body;
@@ -63,7 +63,7 @@ class StudentService {
     return res.status(201).json({ message: "student added successfully", student });
   };
 
-  // ============ BULK ADD FROM PDF (Admin) ============
+
   addStudentsBulk = async (req: Request, res: Response, next: NextFunction) => {
     if (!(req as any).file) throw new AppError("PDF file is required", 400);
 
@@ -93,7 +93,7 @@ class StudentService {
     };
 
     for (const line of dataLines) {
-      // كل سطر: fullName | studentCode | nationalId | currentYear | departmentId(optional)
+
       const parts = line.split("|").map((p: string) => p.trim());
 
       if (parts.length < 4) {
@@ -143,7 +143,7 @@ class StudentService {
     });
   };
 
-  // ============ GET PROFILE (Student) ============
+
   getProfile = async (req: Request, res: Response, next: NextFunction) => {
     const studentId = (req.user as any).id;
 
@@ -202,7 +202,7 @@ class StudentService {
     });
   };
 
-  // ============ GET ALL STUDENTS (Admin) ============
+
   getAllStudents = async (req: Request, res: Response, next: NextFunction) => {
     const { departmentId, currentYear } = req.query;
 
@@ -221,7 +221,7 @@ class StudentService {
     return res.status(200).json({ count: students.length, students });
   };
 
-  // ============ GET ONE STUDENT (Admin) ============
+
   getStudent = async (req: Request, res: Response, next: NextFunction) => {
     const { id } = req.params;
 
@@ -241,7 +241,7 @@ class StudentService {
     return res.status(200).json({ student });
   };
 
-  // ============ DELETE STUDENT (Admin) ============
+
   deleteStudent = async (req: Request, res: Response, next: NextFunction) => {
     const { id } = req.params;
 

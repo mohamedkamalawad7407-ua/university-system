@@ -7,11 +7,11 @@ import { resolveGradeFromScale, calculateGpa } from "./Grade.helper";
 const prisma = new PrismaClient();
 
 class GradeService {
-  // ============ ADD GRADE ============
+
   addGrade = async (req: Request, res: Response, next: NextFunction) => {
     const { enrollmentId, score }: addGradeSchemaType = req.body;
 
-    // 1. الـ enrollment موجود؟
+
     const enrollment = await prisma.enrollment.findUnique({
       where: { id: enrollmentId },
       include: { course: true, term: true, student: true },
@@ -21,25 +21,137 @@ class GradeService {
       throw new AppError("cannot add grade to dropped enrollment", 400);
     }
 
-    // 2. مش عنده grade قبل كده
+
     const existingGrade = await prisma.grade.findUnique({ where: { enrollmentId } });
     if (existingGrade) throw new AppError("grade already exists, use update instead", 409);
 
-    // 3. حول الدرجة الرقمية لـ letter + gpaPoints من الـ GradeScale
+
     const { letterGrade, gpaPoints } = await resolveGradeFromScale(score, prisma);
 
-    // 4. احفظ الـ grade
+
     const grade = await prisma.grade.create({
       data: { enrollmentId, score, letterGrade, gpaPoints },
     });
 
-    // 5. احسب الـ GPA تاني
+
     await this.recalculateStudentGpa(enrollment.studentId, enrollment.termId);
 
     return res.status(201).json({ message: "grade added", grade });
   };
 
-  // ============ UPDATE GRADE ============
+
+  addGradesBulk = async (req: Request, res: Response, next: NextFunction) => {
+    if (!(req as any).file) throw new AppError("CSV file is required", 400);
+    const { termId, courseId } = req.body;
+
+    if (!termId || !courseId) {
+      throw new AppError("termId and courseId are required", 400);
+    }
+
+    const term = await prisma.term.findUnique({ where: { id: termId } });
+    if (!term) throw new AppError("term not found", 404);
+
+    const course = await prisma.course.findUnique({ where: { id: courseId } });
+    if (!course) throw new AppError("course not found", 404);
+
+    const csvData = (req as any).file.buffer.toString("utf-8");
+    const lines = csvData
+      .split(/\r?\n/)
+      .map((l: string) => l.trim())
+      .filter((l: string) => l.length > 0);
+
+    const results = {
+      success: [] as string[],
+      failed: [] as { studentCode: string; reason: string }[],
+    };
+
+
+
+    const successfulStudentIds = new Set<string>();
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (i === 0 && (line.toLowerCase().includes("code") || line.toLowerCase().includes("score"))) {
+        continue;
+      }
+
+
+      const parts = line.split(",").map((p: string) => p.trim());
+      if (parts.length < 2) {
+        results.failed.push({ studentCode: `Line ${i + 1}`, reason: "invalid format, expected code,score" });
+        continue;
+      }
+
+      const studentCode = parts[0];
+      const score = Number(parts[1]);
+
+      if (isNaN(score) || score < 0 || score > 100) {
+        results.failed.push({ studentCode, reason: `invalid score: ${parts[1]}` });
+        continue;
+      }
+
+      try {
+        const student = await prisma.student.findUnique({ where: { studentCode } });
+        if (!student) {
+          results.failed.push({ studentCode, reason: "student not found" });
+          continue;
+        }
+
+        const enrollment = await prisma.enrollment.findUnique({
+          where: { studentId_courseId_termId: { studentId: student.id, courseId, termId } },
+        });
+
+        if (!enrollment) {
+          results.failed.push({ studentCode, reason: "student not enrolled in this course in this term" });
+          continue;
+        }
+
+        if (enrollment.status === "DROPPED") {
+          results.failed.push({ studentCode, reason: "course was dropped by student" });
+          continue;
+        }
+
+        const existingGrade = await prisma.grade.findUnique({ where: { enrollmentId: enrollment.id } });
+        if (existingGrade) {
+          if (existingGrade.isLocked) {
+             results.failed.push({ studentCode, reason: "grade already exists and is locked" });
+             continue;
+          }
+
+          const { letterGrade, gpaPoints } = await resolveGradeFromScale(score, prisma);
+          await prisma.grade.update({
+            where: { id: existingGrade.id },
+            data: { score, letterGrade, gpaPoints },
+          });
+        } else {
+          const { letterGrade, gpaPoints } = await resolveGradeFromScale(score, prisma);
+          await prisma.grade.create({
+            data: { enrollmentId: enrollment.id, score, letterGrade, gpaPoints },
+          });
+        }
+
+        successfulStudentIds.add(student.id);
+        results.success.push(studentCode);
+      } catch (err) {
+        results.failed.push({ studentCode, reason: "database error" });
+      }
+    }
+
+
+    for (const studentId of successfulStudentIds) {
+      await this.recalculateStudentGpa(studentId, termId);
+    }
+
+    return res.status(200).json({
+      message: "bulk grades processing done",
+      totalProcessed: lines.length,
+      successCount: results.success.length,
+      failedCount: results.failed.length,
+      results,
+    });
+  };
+
+
   updateGrade = async (req: Request, res: Response, next: NextFunction) => {
     const { gradeId } = req.params;
     const { score }: updateGradeSchemaType = req.body;
@@ -66,7 +178,7 @@ class GradeService {
     return res.status(200).json({ message: "grade updated", grade: updated });
   };
 
-  // ============ LOCK ONE GRADE ============
+
   lockGrade = async (req: Request, res: Response, next: NextFunction) => {
     const { gradeId } = req.params;
 
@@ -82,7 +194,7 @@ class GradeService {
     return res.status(200).json({ message: "grade locked", grade: updated });
   };
 
-  // ============ LOCK ALL GRADES IN TERM ============
+
   lockAllGradesInTerm = async (req: Request, res: Response, next: NextFunction) => {
     const { termId } = req.params;
 
@@ -112,7 +224,7 @@ class GradeService {
     });
   };
 
-  // ============ GET GRADES BY TERM (Admin) ============
+
   getGradesByTerm = async (req: Request, res: Response, next: NextFunction) => {
     const { termId } = req.params;
 
@@ -132,7 +244,7 @@ class GradeService {
     return res.status(200).json({ count: grades.length, grades });
   };
 
-  // ============ GET MY GRADES (Student) ============
+
   getMyGrades = async (req: Request, res: Response, next: NextFunction) => {
     const studentId = (req.user as any).id;
 
@@ -150,7 +262,7 @@ class GradeService {
 
     const studentGpa = await prisma.studentGpa.findUnique({ where: { studentId } });
 
-    // قسّم المواد على حسب السنة
+
     const byYear: Record<string, any[]> = {};
     for (const e of enrollments) {
       const year = e.course.yearNumber;
@@ -175,9 +287,9 @@ class GradeService {
     });
   };
 
-  // ============ PRIVATE: RECALCULATE GPA ============
+
   private recalculateStudentGpa = async (studentId: string, termId: string) => {
-    // ---- TERM GPA ----
+
     const termEnrollments = await prisma.enrollment.findMany({
       where: { studentId, termId, status: "ENROLLED" },
       include: { course: true, grade: true },
@@ -202,7 +314,7 @@ class GradeService {
       update: { gpa: termGpaValue, totalCredits: termTotalCredits },
     });
 
-    // ---- CUMULATIVE GPA ----
+
     const allEnrollments = await prisma.enrollment.findMany({
       where: { studentId, status: "ENROLLED" },
       include: { course: true, grade: true },

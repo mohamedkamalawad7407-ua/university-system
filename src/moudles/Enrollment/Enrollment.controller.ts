@@ -7,7 +7,7 @@ import { authorization } from "../../middleware/authorization";
 
 const enrollmentRouter = Router();
 
-// Student
+
 enrollmentRouter.post(
   "/",
   authentication(),
@@ -37,7 +37,7 @@ enrollmentRouter.get(
   ES.getAvailableCourses
 );
 
-// Admin
+
 enrollmentRouter.get(
   "/",
   authentication(),

@@ -25,11 +25,11 @@ export const signinAdminSchema = {
 
 
 
-// export const logoutSchema = {
-//     body : z.object({
-//     flag : z.enum(flagType)
-// }).required()
-// }
+
+
+
+
+
 
 export type signinAdminSchemaType = z.infer<typeof signinAdminSchema.body >
 export type signupAdminSchemaType = z.infer<typeof signupAdminSchema.body >

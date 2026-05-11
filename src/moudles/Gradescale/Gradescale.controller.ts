@@ -7,7 +7,7 @@ import { authorization } from "../../middleware/authorization";
 
 const gradeScaleRouter = Router();
 
-// Admin only
+
 gradeScaleRouter.post(
   "/",
   authentication(),
@@ -16,7 +16,7 @@ gradeScaleRouter.post(
   GSS.createScale
 );
 
-// bulk — الأدمن يحط كل الـ scale دفعة واحدة (بيمسح القديم ويحط الجديد)
+
 gradeScaleRouter.post(
   "/bulk",
   authentication(),

@@ -8,8 +8,8 @@ import { AppError } from "../utils/classError";
 export const authentication = (tokenType : TokenType = TokenType.access)=>{
     return async(req:Request,res:Response,next:NextFunction)=>{
     const {authorization} = req.headers
-    
-    const [prefix , token] = authorization?.split(" ")  || [] 
+
+    const [prefix , token] = authorization?.split(" ")  || []
 
     if (!prefix || !token) {
         throw new AppError("token not exist", 400)
@@ -25,12 +25,12 @@ export const authentication = (tokenType : TokenType = TokenType.access)=>{
     }
 
     const decoded=  await decodedTokenAndFetchUser(token , Signature )
-    
-
-    
 
 
-    
+
+
+
+
     req.user = decoded.user
     req.decoded = decoded.decoded
 
