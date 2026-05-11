@@ -166,18 +166,10 @@ class StudentService {
 
     const activeTerm = await prisma.term.findFirst({ where: { isActive: true } });
 
-    const activeCourses = student.enrollments
-      .filter((e) => e.termId === activeTerm?.id && e.status === "ENROLLED")
-      .map((e) => ({
-        enrollmentId: e.id,
-        courseCode: e.course.courseCode,
-        creditHours: e.course.creditHours,
-        year: e.course.yearNumber,
-      }));
-
     const completedCourses = student.enrollments
       .filter((e) => e.grade !== null && e.grade.isLocked)
       .map((e) => ({
+        courseName: e.course.name,
         courseCode: e.course.courseCode,
         creditHours: e.course.creditHours,
         year: e.course.yearNumber,
@@ -185,6 +177,25 @@ class StudentService {
         semester: e.term.semester,
         letterGrade: e.grade?.letterGrade,
         gpaPoints: e.grade?.gpaPoints,
+      }));
+
+    const passedCourseCodes = completedCourses
+      .filter((c) => c.letterGrade !== "F")
+      .map((c) => c.courseCode);
+
+    const activeCourses = student.enrollments
+      .filter(
+        (e) =>
+          e.termId === activeTerm?.id &&
+          e.status === "ENROLLED" &&
+          !passedCourseCodes.includes(e.course.courseCode)
+      )
+      .map((e) => ({
+        enrollmentId: e.id,
+        courseName: e.course.name,
+        courseCode: e.course.courseCode,
+        creditHours: e.course.creditHours,
+        year: e.course.yearNumber,
       }));
 
     return res.status(200).json({

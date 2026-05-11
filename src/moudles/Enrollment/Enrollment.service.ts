@@ -82,6 +82,33 @@ class EnrollmentService {
     });
     if (!isOffered) throw new AppError("course is not offered in this term", 400);
 
+    const existingEnrollment = await prisma.enrollment.findUnique({
+      where: {
+        studentId_courseId_termId: {
+          studentId,
+          courseId,
+          termId: activeTerm.id,
+        },
+      },
+    });
+    if (existingEnrollment) {
+      throw new AppError("you are already enrolled in this course for this term", 400);
+    }
+
+    const alreadyPassed = await prisma.enrollment.findFirst({
+      where: {
+        studentId,
+        courseId,
+        grade: {
+          isLocked: true,
+          letterGrade: { not: "F" },
+        },
+      },
+    });
+    if (alreadyPassed) {
+      throw new AppError("you have already passed this course", 400);
+    }
+
 
     if (course.departments.length > 0) {
       const courseInDept = course.departments.some((d) => d.id === student.departmentId);
