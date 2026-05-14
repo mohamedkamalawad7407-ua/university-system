@@ -1,3 +1,4 @@
+import { AppError } from "../../utils/classError";
 
 
 export const resolveGradeFromScale = async (
@@ -12,7 +13,7 @@ export const resolveGradeFromScale = async (
   });
 
   if (!scale) {
-    throw new Error(
+    throw new AppError(
       `no grade scale found for score ${score}, please configure grade scales first`
     );
   }
