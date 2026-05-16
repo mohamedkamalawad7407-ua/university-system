@@ -85,6 +85,9 @@ model Term {
   semester     Semester
   isActive     Boolean  @default(false) @map("is_active")
 
+  isGradesPublished   Boolean   @default(false) @map("is_grades_published")
+  appealsEndDate      DateTime? @map("appeals_end_date")
+
   enrollments         Enrollment[]
   termGpas            TermGpa[]
   registrationWindows RegistrationWindow[]

@@ -53,7 +53,16 @@ export const removeCoursesFromTermSchema = {
   }),
 };
 
+export const setAppealsWindowSchema = {
+  body: z.object({
+    endDate: z.string().datetime("invalid date format, use ISO 8601"),
+  }).refine((d) => new Date(d.endDate) > new Date(), {
+    message: "endDate must be in the future",
+  }),
+};
+
 export type createTermSchemaType = z.infer<typeof createTermSchema.body>;
 export type updateRegistrationWindowSchemaType = z.infer<typeof updateRegistrationWindowSchema.body>;
 export type addCoursesToTermSchemaType = z.infer<typeof addCoursesToTermSchema.body>;
 export type removeCoursesFromTermSchemaType = z.infer<typeof removeCoursesFromTermSchema.body>;
+export type setAppealsWindowSchemaType = z.infer<typeof setAppealsWindowSchema.body>;

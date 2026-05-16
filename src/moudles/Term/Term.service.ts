@@ -333,6 +333,44 @@ class TermService {
       courses: termCourses.map((tc) => tc.course),
     });
   };
+
+
+  publishGrades = async (req: Request, res: Response, next: NextFunction) => {
+    const { id } = req.params;
+    const { publish }: { publish: boolean } = req.body;
+
+    const term = await prisma.term.findUnique({ where: { id: id as string } });
+    if (!term) throw new AppError("term not found", 404);
+
+    const updated = await prisma.term.update({
+      where: { id: id as string },
+      data: { isGradesPublished: publish ?? true },
+    });
+
+    return res.status(200).json({
+      message: publish ? "grades published to students" : "grades hidden from students",
+      term: updated,
+    });
+  };
+
+
+  setAppealsWindow = async (req: Request, res: Response, next: NextFunction) => {
+    const { id } = req.params;
+    const { endDate }: { endDate: string } = req.body;
+
+    const term = await prisma.term.findUnique({ where: { id: id as string } });
+    if (!term) throw new AppError("term not found", 404);
+
+    const updated = await prisma.term.update({
+      where: { id: id as string },
+      data: { appealsEndDate: new Date(endDate) },
+    });
+
+    return res.status(200).json({
+      message: "appeals window updated",
+      term: updated,
+    });
+  };
 }
 
 export default new TermService();

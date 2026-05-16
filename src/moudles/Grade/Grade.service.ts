@@ -201,6 +201,13 @@ class GradeService {
     const term = await prisma.term.findUnique({ where: { id: termId as string } });
     if (!term) throw new AppError("term not found", 404);
 
+    if (term.appealsEndDate && new Date() < term.appealsEndDate) {
+      throw new AppError(
+        `cannot lock grades until appeals window is closed (ends on ${term.appealsEndDate.toISOString()})`,
+        400
+      );
+    }
+
     const enrollments = await prisma.enrollment.findMany({
       where: { termId: termId as string, status: "ENROLLED" },
       select: { id: true },
@@ -255,7 +262,15 @@ class GradeService {
     });
 
     const enrollments = await prisma.enrollment.findMany({
-      where: { studentId, status: "ENROLLED" },
+      where: {
+        studentId,
+        status: "ENROLLED",
+        term: { isGradesPublished: true }, 
+        OR: [
+          { grade: null }, 
+          { grade: { isLocked: false } } 
+        ]
+      },
       include: { course: true, term: true, grade: true },
       orderBy: { createdAt: "asc" },
     });
@@ -263,27 +278,57 @@ class GradeService {
     const studentGpa = await prisma.studentGpa.findUnique({ where: { studentId } });
 
 
-    const byYear: Record<string, any[]> = {};
+    const byTerm: Record<string, { termInfo: any, courses: any[], termGpa: any }> = {};
+    
     for (const e of enrollments) {
-      const year = e.course.yearNumber;
-      if (!byYear[year]) byYear[year] = [];
-      byYear[year].push({
+      const termKey = `${e.term.academicYear} - ${e.term.semester}`;
+      
+      if (!byTerm[termKey]) {
+        const tGpa = termGpas.find(tg => tg.termId === e.termId);
+        byTerm[termKey] = {
+          termInfo: {
+            id: e.termId,
+            academicYear: e.term.academicYear,
+            semester: e.term.semester,
+            isPublished: e.term.isGradesPublished,
+            appealsEndDate: e.term.appealsEndDate,
+          },
+          termGpa: e.term.isGradesPublished && tGpa ? Number(tGpa.gpa) : null,
+          courses: [],
+        };
+      }
+
+      const isPublished = e.term.isGradesPublished;
+
+      byTerm[termKey].courses.push({
         enrollmentId: e.id,
         courseCode: e.course.courseCode,
+        courseName: e.course.name,
         creditHours: e.course.creditHours,
-        term: `${e.term.academicYear} - ${e.term.semester}`,
-        score: e.grade?.score ?? null,
-        letterGrade: e.grade?.letterGrade ?? null,
-        gpaPoints: e.grade?.gpaPoints ?? null,
+        score: isPublished ? (e.grade?.score ?? null) : "Not Published Yet",
+        letterGrade: isPublished ? (e.grade?.letterGrade ?? null) : "N/A",
+        gpaPoints: isPublished ? (e.grade?.gpaPoints ?? null) : 0,
         isLocked: e.grade?.isLocked ?? false,
       });
     }
 
+    const displayedCoursesWithGrades = enrollments
+      .filter((e) => e.grade !== null && e.term.isGradesPublished)
+      .map((e) => ({
+        gpaPoints: Number(e.grade!.gpaPoints),
+        creditHours: e.course.creditHours,
+      }));
+
+    const currentDisplayGpa = calculateGpa(displayedCoursesWithGrades);
+    const currentDisplayCredits = displayedCoursesWithGrades.reduce(
+      (sum, c) => sum + c.creditHours,
+      0
+    );
+
     return res.status(200).json({
-      cumulativeGpa: studentGpa ? Number(studentGpa.cumulativeGpa) : 0,
-      totalCredits: studentGpa?.totalCredits ?? 0,
-      termGpas: termGpas.map(tg => ({ ...tg, gpa: Number(tg.gpa) })),
-      coursesByYear: byYear,
+      cumulativeGpa: currentDisplayGpa,
+      totalCredits: currentDisplayCredits,
+      resultsByTerm: byTerm,
     });
   };
 

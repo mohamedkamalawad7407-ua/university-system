@@ -99,4 +99,19 @@ termRouter.get(
   TS.getTermCourses
 );
 
+termRouter.patch(
+  "/:id/publish-grades",
+  authentication(),
+  authorization("admin"),
+  TS.publishGrades
+);
+
+termRouter.patch(
+  "/:id/appeals-window",
+  authentication(),
+  authorization("admin"),
+  validation(TV.setAppealsWindowSchema),
+  TS.setAppealsWindow
+);
+
 export default termRouter;

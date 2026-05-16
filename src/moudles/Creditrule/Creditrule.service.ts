@@ -20,7 +20,8 @@ class CreditRuleService {
           AND: [
             { minGpa: { lte: maxGpa ?? 4 } },
             {
-              OR: [{ maxGpa: null }, { maxGpa: { gte: minGpa } }],
+              OR: [{ maxGpa: null },
+              { maxGpa: { gt: minGpa } }],
             },
           ],
         },
@@ -61,7 +62,7 @@ class CreditRuleService {
     const { id } = req.params;
     const { minGpa, maxGpa, maxCredits, isForNewStudents }: updateCreditRuleSchemaType = req.body;
 
-    const rule = await prisma.creditRule.findUnique({ where: { id: id as string} });
+    const rule = await prisma.creditRule.findUnique({ where: { id: id as string } });
     if (!rule) throw new AppError("credit rule not found", 404);
 
     if (isForNewStudents) {
