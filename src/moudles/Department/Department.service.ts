@@ -28,12 +28,42 @@ class DepartmentService {
   getAllDepartments = async (req: Request, res: Response, next: NextFunction) => {
     const departments = await prisma.department.findMany({
       include: {
+        students: {
+          select: {
+            currentYear: true,
+          },
+        },
         _count: { select: { students: true, courses: true } },
       },
       orderBy: { name: "asc" },
     });
 
-    return res.status(200).json({ departments });
+    const result = departments.map((dept) => {
+      const yearCounts = {
+        FIRST_YEAR: 0,
+        SECOND_YEAR: 0,
+        THIRD_YEAR: 0,
+        FOURTH_YEAR: 0,
+      };
+
+      dept.students.forEach((student) => {
+        if (student.currentYear in yearCounts) {
+          yearCounts[student.currentYear as keyof typeof yearCounts]++;
+        }
+      });
+
+      const { students, ...rest } = dept;
+
+      return {
+        ...rest,
+        studentCounts: {
+          total: dept._count.students,
+          byYear: yearCounts,
+        },
+      };
+    });
+
+    return res.status(200).json({ departments: result });
   };
 
 
@@ -59,7 +89,28 @@ class DepartmentService {
 
     if (!department) throw new AppError("department not found", 404);
 
-    return res.status(200).json({ department });
+    const yearCounts = {
+      FIRST_YEAR: 0,
+      SECOND_YEAR: 0,
+      THIRD_YEAR: 0,
+      FOURTH_YEAR: 0,
+    };
+
+    department.students.forEach((student) => {
+      if (student.currentYear in yearCounts) {
+        yearCounts[student.currentYear as keyof typeof yearCounts]++;
+      }
+    });
+
+    const result = {
+      ...department,
+      studentCounts: {
+        total: department._count.students,
+        byYear: yearCounts,
+      },
+    };
+
+    return res.status(200).json({ department: result });
   };
 
 
