@@ -65,16 +65,19 @@ class GradeService {
       failed: [] as { studentCode: string; reason: string }[],
     };
 
-
-
-    const successfulStudentIds = new Set<string>();
+    // Parse CSV records
+    interface CsvRecord {
+      studentCode: string;
+      score: number;
+      lineNumber: number;
+    }
+    const parsedRecords: CsvRecord[] = [];
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       if (i === 0 && (line.toLowerCase().includes("code") || line.toLowerCase().includes("score"))) {
         continue;
       }
-
 
       const parts = line.split(",").map((p: string) => p.trim());
       if (parts.length < 2) {
@@ -83,63 +86,149 @@ class GradeService {
       }
 
       const studentCode = parts[0];
-      const score = Number(parts[1]);
+      const scoreStr = parts[1];
+      const score = Number(scoreStr);
 
-      if (isNaN(score) || score < 0 || score > 100) {
-        results.failed.push({ studentCode, reason: `invalid score: ${parts[1]}` });
+      if (!studentCode) {
+        results.failed.push({ studentCode: `Line ${i + 1}`, reason: "student code is empty" });
         continue;
       }
 
-      try {
-        const student = await prisma.student.findUnique({ where: { studentCode } });
-        if (!student) {
-          results.failed.push({ studentCode, reason: "student not found" });
-          continue;
-        }
-
-        const enrollment = await prisma.enrollment.findUnique({
-          where: { studentId_courseId_termId: { studentId: student.id, courseId, termId } },
-        });
-
-        if (!enrollment) {
-          results.failed.push({ studentCode, reason: "student not enrolled in this course in this term" });
-          continue;
-        }
-
-        if (enrollment.status === "DROPPED") {
-          results.failed.push({ studentCode, reason: "course was dropped by student" });
-          continue;
-        }
-
-        const existingGrade = await prisma.grade.findUnique({ where: { enrollmentId: enrollment.id } });
-        if (existingGrade) {
-          if (existingGrade.isLocked) {
-             results.failed.push({ studentCode, reason: "grade already exists and is locked" });
-             continue;
-          }
-
-          const { letterGrade, gpaPoints } = await resolveGradeFromScale(score, prisma);
-          await prisma.grade.update({
-            where: { id: existingGrade.id },
-            data: { score, letterGrade, gpaPoints },
-          });
-        } else {
-          const { letterGrade, gpaPoints } = await resolveGradeFromScale(score, prisma);
-          await prisma.grade.create({
-            data: { enrollmentId: enrollment.id, score, letterGrade, gpaPoints },
-          });
-        }
-
-        successfulStudentIds.add(student.id);
-        results.success.push(studentCode);
-      } catch (err) {
-        results.failed.push({ studentCode, reason: "database error" });
+      if (isNaN(score) || score < 0 || score > 100) {
+        results.failed.push({ studentCode, reason: `invalid score: ${scoreStr}` });
+        continue;
       }
+
+      parsedRecords.push({ studentCode, score, lineNumber: i + 1 });
     }
 
+    if (parsedRecords.length === 0) {
+      return res.status(200).json({
+        message: "bulk grades processing done (no records processed)",
+        totalProcessed: lines.length,
+        successCount: 0,
+        failedCount: results.failed.length,
+        results,
+      });
+    }
 
-    for (const studentId of successfulStudentIds) {
-      await this.recalculateStudentGpa(studentId, termId);
+    // 1. Fetch all grade scales in memory
+    const gradeScales = await prisma.gradeScale.findMany();
+    const resolveGradeFromMemory = (score: number) => {
+      const scale = gradeScales.find((s) => score >= Number(s.minScore) && score <= Number(s.maxScore));
+      if (!scale) return null;
+      return {
+        letterGrade: scale.letterGrade,
+        gpaPoints: Number(scale.gpaPoints),
+      };
+    };
+
+    // 2. Fetch all unique students
+    const studentCodes = Array.from(new Set(parsedRecords.map((r) => r.studentCode)));
+    const students = await prisma.student.findMany({
+      where: { studentCode: { in: studentCodes } },
+    });
+
+    const studentMap = new Map<string, any>();
+    for (const student of students) {
+      studentMap.set(student.studentCode, student);
+    }
+
+    // 3. Fetch all enrollments with grades for these students in this term/course
+    const studentIds = students.map((s) => s.id);
+    const enrollments = await prisma.enrollment.findMany({
+      where: {
+        studentId: { in: studentIds },
+        courseId,
+        termId,
+      },
+      include: { grade: true },
+    });
+
+    const enrollmentMap = new Map<string, any>();
+    for (const enrollment of enrollments) {
+      enrollmentMap.set(enrollment.studentId, enrollment);
+    }
+
+    // 4. Build batch transactions and update results
+    const prismaTxOperations: any[] = [];
+    const successfulStudentIds = new Set<string>();
+
+    for (const record of parsedRecords) {
+      const { studentCode, score } = record;
+      const student = studentMap.get(studentCode);
+
+      if (!student) {
+        results.failed.push({ studentCode, reason: "student not found" });
+        continue;
+      }
+
+      const enrollment = enrollmentMap.get(student.id);
+      if (!enrollment) {
+        results.failed.push({ studentCode, reason: "student not enrolled in this course in this term" });
+        continue;
+      }
+
+      if (enrollment.status === "DROPPED") {
+        results.failed.push({ studentCode, reason: "course was dropped by student" });
+        continue;
+      }
+
+      const existingGrade = enrollment.grade;
+      const gradeScaleResolved = resolveGradeFromMemory(score);
+
+      if (!gradeScaleResolved) {
+        results.failed.push({
+          studentCode,
+          reason: `no grade scale found for score ${score}, configure grade scales first`,
+        });
+        continue;
+      }
+
+      const { letterGrade, gpaPoints } = gradeScaleResolved;
+
+      if (existingGrade) {
+        if (existingGrade.isLocked) {
+          results.failed.push({ studentCode, reason: "grade already exists and is locked" });
+          continue;
+        }
+
+        prismaTxOperations.push(
+          prisma.grade.update({
+            where: { id: existingGrade.id },
+            data: { score, letterGrade, gpaPoints },
+          })
+        );
+      } else {
+        prismaTxOperations.push(
+          prisma.grade.create({
+            data: { enrollmentId: enrollment.id, score, letterGrade, gpaPoints },
+          })
+        );
+      }
+
+      successfulStudentIds.add(student.id);
+      results.success.push(studentCode);
+    }
+
+    // 5. Execute database transaction for all creations/updates
+    if (prismaTxOperations.length > 0) {
+      await prisma.$transaction(prismaTxOperations);
+    }
+
+    // 6. Recalculate GPA in chunks of 30 for safety and performance
+    const chunkArray = <T>(array: T[], size: number): T[][] => {
+      const chunked: T[][] = [];
+      for (let i = 0; i < array.length; i += size) {
+        chunked.push(array.slice(i, i + size));
+      }
+      return chunked;
+    };
+
+    const studentIdArray = Array.from(successfulStudentIds);
+    const chunks = chunkArray(studentIdArray, 30);
+    for (const chunk of chunks) {
+      await Promise.all(chunk.map((studentId) => this.recalculateStudentGpa(studentId, termId)));
     }
 
     return res.status(200).json({
