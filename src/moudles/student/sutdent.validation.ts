@@ -11,7 +11,7 @@ export const signinStudentSchema = {
 export const addStudentSchema = {
   body: z.object({
     studentCode: z.string().trim(),
-    nationalId: z.string().trim(),
+    nationalId: z.string().trim().min(14, "National ID must be 14 digits").max(14, "National ID must be 14 digits").regex(/^[0-9]+$/),
     fullName: z.string().trim(),
     currentYear: z.nativeEnum(StudyYear),
     departmentId: z.string().uuid().optional(),

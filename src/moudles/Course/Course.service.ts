@@ -64,11 +64,64 @@ class CourseService {
 
 
   getAllCourses = async (req: Request, res: Response, next: NextFunction) => {
-    const courses = await prisma.course.findMany({
-      include: { departments: true, prerequisites: true },
-      orderBy: { yearNumber: "asc" },
+    const page = Number(req.query.page) || 1;
+    const limit = Number(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    const { search, departmentId, yearNumber, creditHours } = req.query;
+
+    const whereClause: any = {};
+
+    // Search filter (by course name or course code, case-insensitive)
+    if (search) {
+      whereClause.OR = [
+        { name: { contains: search as string, mode: "insensitive" } },
+        { courseCode: { contains: search as string, mode: "insensitive" } },
+      ];
+    }
+
+    // Department filter (many-to-many relationship)
+    if (departmentId) {
+      whereClause.departments = {
+        some: { id: departmentId as string },
+      };
+    }
+
+    // Year Number filter (StudyYear enum)
+    if (yearNumber) {
+      whereClause.yearNumber = yearNumber as any;
+    }
+
+    // Credit Hours filter
+    if (creditHours) {
+      whereClause.creditHours = Number(creditHours);
+    }
+
+    // Run count and findMany concurrently
+    const [courses, totalCount] = await Promise.all([
+      prisma.course.findMany({
+        where: whereClause,
+        include: { departments: true, prerequisites: true },
+        orderBy: { yearNumber: "asc" },
+        skip,
+        take: limit,
+      }),
+      prisma.course.count({
+        where: whereClause,
+      }),
+    ]);
+
+    const totalPages = Math.ceil(totalCount / limit);
+
+    return res.status(200).json({
+      meta: {
+        totalCount,
+        totalPages,
+        currentPage: page,
+        limit,
+      },
+      courses,
     });
-    return res.status(200).json({ courses });
   };
 
 

@@ -354,10 +354,10 @@ class GradeService {
       where: {
         studentId,
         status: "ENROLLED",
-        term: { isGradesPublished: true }, 
+        term: { isGradesPublished: true },
         OR: [
-          { grade: null }, 
-          { grade: { isLocked: false } } 
+          { grade: null },
+          { grade: { isLocked: false } }
         ]
       },
       include: { course: true, term: true, grade: true },
@@ -368,10 +368,10 @@ class GradeService {
 
 
     const byTerm: Record<string, { termInfo: any, courses: any[], termGpa: any }> = {};
-    
+
     for (const e of enrollments) {
       const termKey = `${e.term.academicYear} - ${e.term.semester}`;
-      
+
       if (!byTerm[termKey]) {
         const tGpa = termGpas.find(tg => tg.termId === e.termId);
         byTerm[termKey] = {
