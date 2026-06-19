@@ -35,15 +35,22 @@ class AiAdvisorService {
       throw new AppError("There is no active academic term at the moment.", 400);
     }
 
-    // 3. Fetch active enrollments in the active term
+    // 3. Fetch active enrollments in the active term with prerequisite dependencies
     const activeEnrollments = await prisma.enrollment.findMany({
       where: {
         studentId: studentId,
         termId: activeTerm.id,
         status: "ENROLLED",
       },
-      include: { course: true },
+      include: {
+        course: {
+          include: {
+            requiredFor: true,
+          },
+        },
+      },
     });
+
 
     if (activeEnrollments.length === 0) {
       throw new AppError("You are not enrolled in any courses in the active term.", 400);
@@ -90,6 +97,17 @@ class AiAdvisorService {
       )
       .join("\n");
 
+    // Format prerequisite dependencies warning info
+    const dependenciesList = activeEnrollments
+      .filter((e) => e.course.requiredFor && e.course.requiredFor.length > 0)
+      .map((e) => {
+        const dependentNames = e.course.requiredFor
+          .map((dep) => `${dep.name} (${dep.courseCode})`)
+          .join(", ");
+        return `- ${e.course.name} (${e.course.courseCode}): معتمد عليها مواد مستقبلاً: ${dependentNames}`;
+      })
+      .join("\n");
+
     // Format grade scale rules for prompt
     const gradeScaleRules = gradeScales
       .map(
@@ -113,6 +131,9 @@ ${activeCoursesList}
 Grading Scale:
 ${gradeScaleRules}
 
+Prerequisite Dependencies (Subsequent courses that depend on the student's current courses):
+${dependenciesList || "None"}
+
 Mathematical Data:
 - Total Credits after this semester: ${totalFutureCredits}
 - Current Total Points: ${currentWeightedPoints.toFixed(2)}
@@ -132,7 +153,12 @@ Use this structure:
    - For EACH current course, suggest the target grade and score they need to aim for to secure the target (or the max possible if target is not feasible).
    - Use a simple and neat format (e.g., a simple bullet point list or a small markdown table).
 
-3. **نصائح سريعة للنجاح (3 Quick Tips)**:
+3. **تحذير بشأن المتطلبات السابقة (Prerequisite Warnings)**:
+   - Check if there are future courses dependent on their current courses (listed in Prerequisite Dependencies).
+   - If yes, write a clear warning section in Arabic (e.g., "⚠️ تحذير متطلبات هامة:") informing the student that failing or dropping these courses will block them from registering for those dependent courses in subsequent semesters. List them clearly.
+   - If there are no dependencies, you can skip this section or state there are no dependencies affected.
+
+4. **نصائح سريعة للنجاح (3 Quick Tips)**:
    - Give exactly 3 brief, actionable tips to succeed in these courses.
 `;
 
