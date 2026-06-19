@@ -99,46 +99,41 @@ class AiAdvisorService {
       .join("\n");
 
     const prompt = `
-You are an advanced academic AI advisor for a university management system.
-A student wants to achieve a target cumulative GPA of ${targetGpa}.
+You are a friendly, encouraging academic AI advisor. A student wants to reach a cumulative GPA of ${targetGpa}.
 
-Here is the student's academic profile:
-- Student Name: ${student.fullName}
-- Current Cumulative GPA: ${currentGpa}
+Student Profile:
+- Name: ${student.fullName}
+- Current GPA: ${currentGpa}
 - Current Completed Credits: ${currentCredits}
-- Target Cumulative GPA: ${targetGpa}
+- Target GPA: ${targetGpa}
 
-Here are the courses they are currently enrolled in for this semester (active term):
+Current Semester Enrolled Courses:
 ${activeCoursesList}
 
-Here is the university's grading scale (GradeScale):
+Grading Scale:
 ${gradeScaleRules}
 
-Here are the mathematical calculations:
-- Total credit hours after this semester: ${totalFutureCredits}
-- Current total grade points: ${currentWeightedPoints.toFixed(2)}
-- Target total grade points needed: ${targetWeightedPoints.toFixed(2)}
-- Additional grade points needed from active courses: ${neededPoints.toFixed(2)}
-- Average GPA points needed per credit hour in active courses: ${avgNeededPoints.toFixed(2)} (Maximum possible in scale is ${maxScalePoints})
-- Maximum possible cumulative GPA the student can achieve if they get the maximum grade in all current courses: ${roundedMaxPossibleGpa}
+Mathematical Data:
+- Total Credits after this semester: ${totalFutureCredits}
+- Current Total Points: ${currentWeightedPoints.toFixed(2)}
+- Target Total Points: ${targetWeightedPoints.toFixed(2)}
+- Additional points needed from active courses: ${neededPoints.toFixed(2)}
+- Max Possible cumulative GPA they can reach this semester: ${roundedMaxPossibleGpa}
 
-Your task is to analyze this data and generate a detailed, encouraging, and highly specific study plan/advising report in Arabic.
-Please include the following sections:
-1. **تحليل إمكانية التحقيق (Feasibility Analysis)**:
-   - Tell the student if their target GPA of ${targetGpa} is mathematically achievable this semester.
-   - If achievable, explain how realistic it is (e.g. requires moderate effort, high effort, or perfect grades).
-   - If NOT achievable (because the needed average GPA points per credit hour is greater than ${maxScalePoints}), clearly explain that it is mathematically impossible to reach ${targetGpa} this semester. Provide the maximum GPA they can achieve (${roundedMaxPossibleGpa}) if they get full marks, and encourage them to aim for that as a stepping stone.
+Write a simplified, neat, and direct response in Arabic. Do NOT make it overly complex or verbose. Keep it friendly and practical.
+Use this structure:
+1. **التحليل والجدوى (هل الهدف ممكن؟)**:
+   - State clearly if it's achievable this semester.
+   - If achievable: say "نعم، الهدف ممكن!" and explain if it's easy or requires high grades.
+   - If not achievable: say "للأسف، الهدف غير ممكن رياضياً هذا الفصل" and mention the maximum GPA they can reach (${roundedMaxPossibleGpa}) if they get full marks. Encourage them to target that first.
+   - Keep the explanation very brief and avoid writing long formulas.
 
-2. **توزيع التقديرات المستهدفة (Target Grades Distribution)**:
-   - Suggest a specific target letter grade (e.g. A, B, C) and score range from the GradeScale for EACH active course so that the total GPA points they earn meets or exceeds the needed ${neededPoints.toFixed(2)} points.
-   - For example: "Course X (3 Credits): Target Grade B (GPA Points 3.0), Course Y (2 Credits)... Total points = (3*3) + ... = 9+... which satisfies the needed points."
-   - Make sure your suggested grades are realistic and add up to at least the required points.
+2. **التقديرات المطلوبة في المواد الحالية (Target Grades)**:
+   - For EACH current course, suggest the target grade and score they need to aim for to secure the target (or the max possible if target is not feasible).
+   - Use a simple and neat format (e.g., a simple bullet point list or a small markdown table).
 
-3. **نصائح دراسية مخصصة (Custom Study Advice)**:
-   - Provide concrete, helpful study advice in Arabic tailored for university students to help them achieve these target grades.
-   - Offer tips on time management, consulting professors, preparing for exams, and peer study groups.
-
-Keep the response structured, clear, using markdown formatting (bolding, lists, tables if appropriate) in professional, motivating Arabic.
+3. **نصائح سريعة للنجاح (3 Quick Tips)**:
+   - Give exactly 3 brief, actionable tips to succeed in these courses.
 `;
 
     try {
