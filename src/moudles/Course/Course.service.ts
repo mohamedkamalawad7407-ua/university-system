@@ -150,6 +150,15 @@ class CourseService {
     const course = await prisma.course.findUnique({ where: { id: id as string } });
     if (!course) throw new AppError("course not found", 404);
 
+    if (courseCode) {
+      const exists = await prisma.course.findUnique({
+        where: { courseCode },
+      });
+      if (exists && exists.id !== id) {
+        throw new AppError("course code already exists", 409);
+      }
+    }
+
     if (departmentIds) {
       const departments = await prisma.department.findMany({
         where: { id: { in: departmentIds } },
