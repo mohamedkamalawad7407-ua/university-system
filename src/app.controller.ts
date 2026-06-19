@@ -16,6 +16,8 @@ import gradeScaleRouter from "./moudles/Gradescale/Gradescale.controller"
 import departmentRouter from "./moudles/Department/Department.controller"
 import creditRuleRouter from "./moudles/Creditrule/Creditrule.controller"
 import promotionRouter from "./moudles/Promotion/Promotion.controller"
+import aiAdvisorRouter from "./moudles/AiAdvisor/AiAdvisor.controller"
+
 
 
 
@@ -49,6 +51,8 @@ const bootStrap = ()=>{
     app.use("/department", departmentRouter);
     app.use("/credit-rules", creditRuleRouter);
     app.use("/promotion", promotionRouter);
+    app.use("/ai-advisor", aiAdvisorRouter);
+
 
 
     app.get("/",(req:Request,res:Response,next:NextFunction)=>{
