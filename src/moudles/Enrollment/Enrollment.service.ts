@@ -1,9 +1,9 @@
 import { NextFunction, Request, Response } from "express";
-import { PrismaClient, StudyYear } from "@prisma/client";
+import { StudyYear } from "@prisma/client";
 import { AppError } from "../../utils/classError";
 import { enrollSchemaType } from "./Enrollment.validation";
+import prisma from "../../utils/prisma";
 
-const prisma = new PrismaClient();
 
 const yearOrder: Record<StudyYear, number> = {
   FIRST_YEAR: 1,

@@ -1,9 +1,8 @@
 import { NextFunction, Request, Response } from "express";
-import { PrismaClient } from "@prisma/client";
 import { AppError } from "../../utils/classError";
 import { createCourseSchemaType, updateCourseSchemaType } from "./Course.validation";
+import prisma from "../../utils/prisma";
 
-const prisma = new PrismaClient();
 
 class CourseService {
 
@@ -72,15 +71,14 @@ class CourseService {
 
     const whereClause: any = {};
 
-    // Search filter (by course name or course code, case-insensitive)
     if (search) {
       whereClause.OR = [
         { name: { contains: search as string, mode: "insensitive" } },
         { courseCode: { contains: search as string, mode: "insensitive" } },
+        { yearNumber: { contains: search as string, mode: "insensitive" } }
       ];
     }
 
-    // Department filter (many-to-many relationship)
     if (departmentId) {
       whereClause.departments = {
         some: { id: departmentId as string },
@@ -129,7 +127,7 @@ class CourseService {
     const { id } = req.params;
 
     const course = await prisma.course.findUnique({
-      where: { id : id as string },
+      where: { id: id as string },
       include: { departments: true, prerequisites: true },
     });
     if (!course) throw new AppError("course not found", 404);
@@ -149,7 +147,7 @@ class CourseService {
       prerequisiteIds,
     }: updateCourseSchemaType = req.body;
 
-    const course = await prisma.course.findUnique({ where: { id :id as string } });
+    const course = await prisma.course.findUnique({ where: { id: id as string } });
     if (!course) throw new AppError("course not found", 404);
 
     if (departmentIds) {
@@ -171,7 +169,7 @@ class CourseService {
     }
 
     const updated = await prisma.course.update({
-      where: { id : id as string },
+      where: { id: id as string },
       data: {
         ...(name && { name }),
         ...(courseCode && { courseCode }),
@@ -194,10 +192,10 @@ class CourseService {
   deleteCourse = async (req: Request, res: Response, next: NextFunction) => {
     const { id } = req.params;
 
-    const course = await prisma.course.findUnique({ where: { id : id as string } });
+    const course = await prisma.course.findUnique({ where: { id: id as string } });
     if (!course) throw new AppError("course not found", 404);
 
-    await prisma.course.delete({ where: { id : id as string } });
+    await prisma.course.delete({ where: { id: id as string } });
     return res.status(200).json({ message: "course deleted" });
   };
 }

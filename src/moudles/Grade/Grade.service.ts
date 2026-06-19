@@ -1,10 +1,9 @@
 import { NextFunction, Request, Response } from "express";
-import { PrismaClient } from "@prisma/client";
 import { AppError } from "../../utils/classError";
 import { addGradeSchemaType, updateGradeSchemaType } from "./Grade.validation";
 import { resolveGradeFromScale, calculateGpa } from "./Grade.helper";
+import prisma from "../../utils/prisma";
 
-const prisma = new PrismaClient();
 
 class GradeService {
 

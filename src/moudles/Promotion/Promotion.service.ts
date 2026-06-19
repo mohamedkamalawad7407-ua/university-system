@@ -1,12 +1,12 @@
 import { NextFunction, Request, Response } from "express";
-import { PrismaClient, StudyYear } from "@prisma/client";
+import { StudyYear } from "@prisma/client";
 import { AppError } from "../../utils/classError";
 import {
   createPromotionRuleSchemaType,
   updatePromotionRuleSchemaType,
 } from "./Promotion.validation";
+import prisma from "../../utils/prisma";
 
-const prisma = new PrismaClient();
 
 const yearOrder: Record<StudyYear, number> = {
   FIRST_YEAR: 1,
@@ -86,19 +86,30 @@ class PromotionService {
 
     const rulesMap = new Map(rules.map((r) => [r.fromYear, r.minCredits]));
 
-
     const students = await prisma.student.findMany({
       where: { currentYear: { not: "FOURTH_YEAR" } },
-      include: { studentGpa: true },
+      include: {
+        studentGpa: true,
+        enrollments: {
+          where: {
+            status: "ENROLLED",
+            grade: {
+              letterGrade: { not: "F" },
+              isLocked: true,
+            },
+          },
+          include: { course: { select: { creditHours: true } } },
+        },
+      },
     });
 
     const promoted: { studentCode: string; fullName: string; from: string; to: string }[] = [];
     const stayed: { studentCode: string; fullName: string; year: string; passedCredits: number; required: number }[] = [];
+    const updatePromises: Promise<any>[] = [];
 
     for (const student of students) {
       const minCredits = rulesMap.get(student.currentYear);
       if (minCredits === undefined) {
-
         stayed.push({
           studentCode: student.studentCode,
           fullName: student.fullName,
@@ -109,20 +120,7 @@ class PromotionService {
         continue;
       }
 
-
-      const passedEnrollments = await prisma.enrollment.findMany({
-        where: {
-          studentId: student.id,
-          status: "ENROLLED",
-          grade: {
-            letterGrade: { not: "F" },
-            isLocked: true,
-          },
-        },
-        include: { course: { select: { creditHours: true } } },
-      });
-
-      const passedCredits = passedEnrollments.reduce(
+      const passedCredits = student.enrollments.reduce(
         (sum, e) => sum + e.course.creditHours,
         0
       );
@@ -130,11 +128,12 @@ class PromotionService {
       const toYear = nextYear[student.currentYear];
 
       if (passedCredits >= minCredits && toYear) {
-
-        await prisma.student.update({
-          where: { id: student.id },
-          data: { currentYear: toYear },
-        });
+        updatePromises.push(
+          prisma.student.update({
+            where: { id: student.id },
+            data: { currentYear: toYear },
+          })
+        );
         promoted.push({
           studentCode: student.studentCode,
           fullName: student.fullName,
@@ -151,6 +150,8 @@ class PromotionService {
         });
       }
     }
+
+    await Promise.all(updatePromises);
 
     return res.status(200).json({
       message: "promotion process completed",
@@ -172,7 +173,19 @@ class PromotionService {
 
     const students = await prisma.student.findMany({
       where: { currentYear: { not: "FOURTH_YEAR" } },
-      include: { studentGpa: true },
+      include: {
+        studentGpa: true,
+        enrollments: {
+          where: {
+            status: "ENROLLED",
+            grade: {
+              letterGrade: { not: "F" },
+              isLocked: true,
+            },
+          },
+          include: { course: { select: { creditHours: true } } },
+        },
+      },
     });
 
     const willPromote: any[] = [];
@@ -191,19 +204,8 @@ class PromotionService {
         continue;
       }
 
-      const passedEnrollments = await prisma.enrollment.findMany({
-        where: {
-          studentId: student.id,
-          status: "ENROLLED",
-          grade: {
-            letterGrade: { not: "F" },
-            isLocked: true,
-          },
-        },
-        include: { course: { select: { creditHours: true } } },
-      });
-
-      const passedCredits = passedEnrollments.reduce(
+      // ✅ البيانات موجودة بالفعل في الـ student object - مش محتاجين query جديدة
+      const passedCredits = student.enrollments.reduce(
         (sum, e) => sum + e.course.creditHours,
         0
       );

@@ -1,8 +1,6 @@
 import jwt, { JwtPayload } from "jsonwebtoken"
 import { AppError } from "./classError"
-import { PrismaClient } from "@prisma/client"
-
-const prisma = new PrismaClient()
+import prisma from "./prisma"
 
 
 

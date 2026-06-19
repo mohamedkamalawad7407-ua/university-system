@@ -1,12 +1,8 @@
 import { NextFunction, Request, Response } from "express";
-import { PrismaClient } from "@prisma/client";
 import { AppError } from "../../utils/classError";
 import { createTermSchemaType } from "./Term.validation";
 import { updateRegistrationWindowSchemaType } from "./Term.validation";
-
-
-
-const prisma = new PrismaClient();
+import prisma from "../../utils/prisma";
 
 class TermService {
 

@@ -1,11 +1,10 @@
 import { NextFunction, Request, Response } from "express";
-import { PrismaClient } from "@prisma/client";
 import { AppError } from "../../utils/classError";
 import { generateToken, getSignature, TokenType } from "../../utils/token";
 import { signinStudentSchemaType, addStudentSchemaType } from "./sutdent.validation";
 const { PDFParse } = require("pdf-parse");
+import prisma from "../../utils/prisma";
 
-const prisma = new PrismaClient();
 
 class StudentService {
 

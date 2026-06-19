@@ -1,12 +1,11 @@
 import { NextFunction, Request, Response } from "express";
-import { PrismaClient } from "@prisma/client";
-import { HASH } from "../../utils/hash";
 import { AppError } from "../../utils/classError";
 import { signinAdminSchemaType, signupAdminSchemaType } from "./admin.validation";
+import { HASH } from "../../utils/hash";
 import { compare } from "bcrypt";
 import { generateToken, getSignature, TokenType } from "../../utils/token";
+import prisma from "../../utils/prisma";
 
-const prisma = new PrismaClient();
 
 class AdminService {
   signup = async (req: Request, res: Response, next: NextFunction) => {

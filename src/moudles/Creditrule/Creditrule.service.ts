@@ -1,12 +1,11 @@
 import { NextFunction, Request, Response } from "express";
-import { PrismaClient } from "@prisma/client";
 import { AppError } from "../../utils/classError";
 import {
   createCreditRuleSchemaType,
   updateCreditRuleSchemaType,
 } from "./Creditrule.validation";
+import prisma from "../../utils/prisma";
 
-const prisma = new PrismaClient();
 
 class CreditRuleService {
 

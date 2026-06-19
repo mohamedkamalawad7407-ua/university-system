@@ -1,13 +1,12 @@
 import { NextFunction, Request, Response } from "express";
-import { PrismaClient } from "@prisma/client";
 import { AppError } from "../../utils/classError";
 import {
   createDepartmentSchemaType,
   updateDepartmentSchemaType,
   assignStudentSchemaType,
 } from "./Department.validation";
+import prisma from "../../utils/prisma";
 
-const prisma = new PrismaClient();
 
 class DepartmentService {
 
