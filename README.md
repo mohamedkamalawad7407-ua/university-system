@@ -14,7 +14,8 @@ This backend system implements high-fidelity business logic for managing student
 - **Database**: PostgreSQL (relational storage with optimized indexes and cascade strategies)
 - **Data Validation & Parsing**: Zod (runtime type checking & body validation)
 - **Security & JWT Auth**: JSON Web Tokens (JWT), Bcrypt password hashing, authorization guards
-- **Bulk Operations**: Multer (file buffers) & PDF text parsing for student/grade bulk imports
+- **Bulk Operations**: Multer (file buffers) & PDF text parsing (`pdf-parse`) for student bulk imports, and CSV parser for grades bulk imports
+- **AI Integration**: Google Gen AI SDK (Gemini 2.5 Flash) for personalized academic advisory
 - **API Guarding**: Helmet (header protection), CORS, Express Rate Limit (DDoS mitigation)
 
 ---
@@ -26,7 +27,15 @@ The codebase follows an elegant, domain-driven **Module-Based Structure** where 
 ```text
 src/
 ├── middleware/       # Global filters (Auth guards, Schema validators, Error boundaries)
+│   ├── authentication.ts  # Decodes JWT tokens and fetches users
+│   ├── authorization.ts   # Enforces access control based on user roles
+│   └── validation.ts      # Performs Zod validation on request data
 ├── utils/            # Shared utilities (Custom AppError handler, JWT & Signature generators)
+│   ├── classError.ts      # AppError extending Error class
+│   ├── hash.ts            # Bcrypt hashing helper
+│   ├── prisma.ts          # Central Prisma Client instance
+│   ├── request.type.ts    # Global typing overrides for Express Request
+│   └── token.ts           # Token generation/verification and signature retrieval
 └── moudles/          # Isolated, domain-driven business modules
     ├── admin/        # System Administrators authentication and management
     ├── student/      # Students credentials, profile compilation, and PDF bulk creation
@@ -37,7 +46,8 @@ src/
     ├── Grade/        # Grade publishing, letter grade mapping, automatic term & cumulative GPA logic
     ├── Gradescale/   # Grading scales (Score range to GPA points & letter grade mapping)
     ├── Creditrule/   # Dynamic credit constraints based on GPA and student status (New vs. Enrolled)
-    └── Promotion/    # Automated year-to-year promotion rules based on passed credit hours
+    ├── Promotion/    # Automated year-to-year promotion rules based on passed credit hours
+    └── AiAdvisor/    # AI-powered target GPA planner using Gemini
 ```
 
 ---
@@ -114,6 +124,7 @@ erDiagram
         string termId FK
         decimal gpa
         int totalCredits
+        boolean isLocked
     }
     STUDENT_GPA {
         string id PK
@@ -133,6 +144,17 @@ erDiagram
         StudyYear fromYear UK
         int minCredits
     }
+    GRADE_SCALE {
+        string letterGrade PK
+        decimal minScore
+        decimal maxScore
+        decimal gpaPoints
+    }
+    TERM_COURSE {
+        string id PK
+        string termId FK
+        string courseId FK
+    }
 
     DEPARTMENT ||--o{ STUDENT : "enrolls"
     STUDENT ||--o{ ENROLLMENT : "creates"
@@ -143,51 +165,349 @@ erDiagram
     COURSE ||--o{ ENROLLMENT : "targets"
     ENROLLMENT ||--o| GRADE : "earns"
     COURSE }|..|{ DEPARTMENT : "belongs_to"
+    TERM ||--o{ TERM_COURSE : "contains"
+    COURSE ||--o{ TERM_COURSE : "offered_in"
 ```
 
 ---
 
-## 💡 Detailed Feature Breakdowns
+## 🛠️ Global Middleware & Custom Utilities
 
-### 1. Robust Authentication & Roles
-- **Dual-Role Guards**: The system enforces discrete `admin` and `student` roles.
-- **Student Onboarding Credentials**: Students log in using their `studentCode` and `nationalId` as primary credentials, bypassing traditional password requirements for academic security.
-- **Admin Accounts**: Protected by Bcrypt hashing with absolute API security.
+### 1. Security & Guards Middleware
+*   **Authentication (`authentication.ts`)**: Extends express request contexts. Reads JWT tokens from the `Authorization` header (`Bearer <token>`), verifies the signature against token configurations (Access/Refresh), decodes payload `{ id, role }`, retrieves the matching database user (Admin or Student), and appends it to `req.user`.
+*   **Authorization (`authorization.ts`)**: Takes a parameter list of allowed roles (e.g., `admin`, `student`). Compares the user role inside `req.user` and throws a `403 Forbidden` error if the role is unauthorized.
+*   **Validation (`validation.ts`)**: Generic validation wrapper for Zod schemas. Supports validating `body`, `query`, or `params` and aggregates formatting errors before forwarding them to the global exception filter.
 
-### 2. Smart Department Allocation
-- **Academic Enforcements**: Assigning a student to a department checks if the department has reached its `maxStudents` capacity.
-- **GPA Prerequisite Check**: Prevents students from joining highly competitive departments unless their cumulative GPA is higher than the department's configured `minGpa` (exempting fresh first-year students).
-- **Yearly Student Analytics**: Provides deep reporting on student distribution per academic year (FIRST_YEAR through FOURTH_YEAR) and average GPAs across the department.
+### 2. General Utilities
+*   **Token Controller (`token.ts`)**: Manages JWT operations. Resolves corresponding environment signatures (e.g. `ACCESS_TOKEN`, `REFRESH_TOKEN`) and encapsulates sign/verify actions.
+*   **Encryption Provider (`hash.ts`)**: Encapsulates `bcrypt` utilities with salt-round configurations from system environment variables.
+*   **Global Exception Boundaries**: Catch-all Express middleware converting standard Node exceptions and `AppError` payloads into standard JSON responses holding the HTTP status code, descriptive message, and execution stack trace.
 
-### 3. Credit Hour Limit Constraints (`CreditRules`)
-- **GPA-based Capacities**: Dynamically configures the maximum credit hours a student is allowed to register per term based on their cumulative GPA.
-- **Freshmen Safe-Guards**: Custom configuration rules (`isForNewStudents = true`) apply specifically to first-year students who do not yet have a recorded GPA.
+---
 
-### 4. Rigid Multi-Semester Terms & Registration Windows
-- **Active Term Control**: Allows only one term (First, Second, or Summer) to be set to `isActive` at any given time.
-- **Registration Timeframes**: Defines specific date windows (`startDate` to `endDate`) per academic year (e.g. registration opens for Seniors on Monday, Juniors on Tuesday) to manage server demand.
-- **Term Courses**: Administrators dynamically select and configure which courses are offered in the active term (`TermCourse`).
+## 💡 Domain Modules & Service Specifications
 
-### 5. Advanced Enrollment constraints Engine (`getAvailableCourses`)
-The course enrollment core performs strict multi-variable validation checks before approving a student registration:
-- **Offered Checks**: Ensures the course is actively offered in the current term.
-- **Prerequisite Validation**: Students must have already completed and **passed** all prerequisites (grade $\neq$ 'F') before registering.
-- **Department Boundaries**: Enforces that department-specific courses are only joinable by declared students.
-- **Level Restrictions**: Restricts students from registering for higher-level courses (e.g., a Sophomore cannot take a Senior course) unless they advance in academic years.
-- **Double-Pass Guard**: Blocks registration for any course the student has already passed in a previous semester.
-- **Credit Hour Bounds**: Dynamically validates the student's registered hours against their maximum allowed credits (based on `CreditRules`) to prevent over-enrollment.
-- **Automatic Retake Identification**: Identifies failed courses (letter grade `'F'`) and displays them separately to encourage retaking.
+### 1. Admin Module (`src/moudles/admin`)
+Manages system administrators authentication and account creations. Admins possess global privileges allowing database rule manipulation, grade lock audits, academic settings configuration, and student onboarding.
 
-### 6. Intelligent Grades & Automatic GPA calculations
-- **Automated Conversions**: Raw numerical grades (out of 100) are automatically mapped to Letter Grades (`A`, `B+`, `C-`, `F`, etc.) using dynamic mappings defined in the `GradeScale` table.
-- **Grade Locking**: Administrators audit and "Lock" grades. Once locked, grades cannot be modified, triggering a cascading, transactional calculation of:
-  - The student's current Term GPA.
-  - The student's overall Cumulative GPA.
-  - The student's total completed Credit Hours.
-- **Bulk PDF Import**: Supports uploading bulk student grades and bulk student accounts by reading and parsing tables directly from standard academic PDF reports.
+*   **POST `/admin/signup`**
+    *   **Authorization**: Public
+    *   **Validation**: `signupAdminSchema` (Requires email format validation and a secure password matching: minimum 8 characters, containing at least 1 uppercase letter, 1 lowercase letter, and 1 numeric digit).
+    *   **Logic**: Checks if email is already registered in the system. Hashes the password using `HASH` and saves a new admin record.
+*   **POST `/admin/signin`**
+    *   **Authorization**: Public
+    *   **Validation**: `signinAdminSchema` (Requires email and password).
+    *   **Logic**: Verifies database administrator existence, matches password hashes using `bcrypt.compare`, and issues a JWT token loaded with the admin identity and role.
 
-### 7. Academic Advancement (`PromotionRules`)
-- **Automatic Level-Up**: Runs background validation rules evaluating student progress. If the student has successfully passed the minimum credit hours defined in `PromotionRules` for their current `StudyYear`, they are automatically promoted to the next academic level.
+---
+
+### 2. Student Module (`src/moudles/student`)
+Controls student profiles, auth portals, and bulk imports. Students use their academic credentials to log in, view current schedules, check past semesters transcripts, and execute registration.
+
+*   **POST `/student/signin`**
+    *   **Authorization**: Public
+    *   **Validation**: `signinStudentSchema` (Requires `studentCode` and `nationalId`).
+    *   **Logic**: Verifies credentials directly. If correct, generates a student JWT access token.
+*   **POST `/student/`**
+    *   **Authorization**: Admin Only
+    *   **Validation**: `addStudentSchema` (Requires `studentCode`, `nationalId` (14 numeric digits), `fullName`, `currentYear` (FIRST_YEAR, SECOND_YEAR, THIRD_YEAR, FOURTH_YEAR), and optional `departmentId`).
+    *   **Logic**: Validates department capacity limits (`maxStudents`) before inserting a new student record to avoid overcrowding.
+*   **POST `/student/bulk`**
+    *   **Authorization**: Admin Only
+    *   **Payload**: PDF File (`file`)
+    *   **Logic**: Parses an academic registry PDF report. It filters header lines and parses table records split by `|` formatting. Extracts `fullName`, `studentCode`, `nationalId`, `currentYear`, and `departmentId`. Performs schema validations and registers non-existing student records in a batch, returning stats on successful and failed imports.
+*   **GET `/student/profile/me`**
+    *   **Authorization**: Student Only
+    *   **Logic**: Aggregates the logged-in student's details, including department info, cumulative GPA, completed credits, actively registered courses, and past completed courses grouped by term and grade.
+*   **GET `/student/all`**
+    *   **Authorization**: Admin Only
+    *   **Query Filters**: `departmentId`, `currentYear`
+    *   **Logic**: Returns lists of students matching query criteria, showing their basic profiles and GPAs.
+*   **GET `/student/:id`**
+    *   **Authorization**: Admin Only
+    *   **Logic**: Retrieves a complete profile of a specific student by ID, including academic transcripts, active enrollments, and term-by-term GPA charts.
+*   **DELETE `/student/:id`**
+    *   **Authorization**: Admin Only
+    *   **Logic**: Cascades removal of a student from the database, dropping all historical records and enrollments.
+
+---
+
+### 3. Department Module (`src/moudles/Department`)
+Maintains academic departments. Restricts enrollment capacity, enforces department GPAs, and reports year-wise student analytics.
+
+*   **POST `/department/`**
+    *   **Authorization**: Admin Only
+    *   **Validation**: `createDepartmentSchema` (Requires name, max capacity `maxStudents`, and minimum threshold `minGpa`).
+    *   **Logic**: Instantiates a department.
+*   **GET `/department/`**
+    *   **Authorization**: Admin & Student
+    *   **Logic**: Lists all departments. Calculates active student count distributions across all academic years (`FIRST_YEAR` through `FOURTH_YEAR`).
+*   **GET `/department/:id`**
+    *   **Authorization**: Admin & Student
+    *   **Logic**: Details a single department, showing enrolled courses, student directories, and capacity counts.
+*   **PUT `/department/:id`**
+    *   **Authorization**: Admin Only
+    *   **Validation**: `updateDepartmentSchema`
+    *   **Logic**: Updates department rules. Prevents shrinking `maxStudents` below the current count of declared students in that department.
+*   **DELETE `/department/:id`**
+    *   **Authorization**: Admin Only
+    *   **Logic**: Deletes a department if no students are currently assigned to it.
+*   **POST `/department/assign`**
+    *   **Authorization**: Admin Only
+    *   **Validation**: `assignStudentSchema` (Requires `studentId` and `departmentId`).
+    *   **Logic**: Enforces assignment constraints:
+        1. Checks department capacity limits.
+        2. Student must not be assigned to another department.
+        3. Restricts assignment if the student's cumulative GPA is lower than the department's configured `minGpa` (exempting first-year students who do not have a GPA yet).
+*   **PATCH `/department/:studentId/remove`**
+    *   **Authorization**: Admin Only
+    *   **Logic**: Removes a student from a department. Blocks removal if the student is currently enrolled in any active course during the current term.
+*   **GET `/department/:id/stats`**
+    *   **Authorization**: Admin Only
+    *   **Logic**: Calculates statistical aggregates for a department: total student count, available seats, average GPA, and year-by-year counts.
+
+---
+
+### 4. Course Module (`src/moudles/Course`)
+Handles course curriculum listings, credit hours, and prerequisite mappings.
+
+*   **POST `/course/`**
+    *   **Authorization**: Admin Only
+    *   **Validation**: `createCourseSchema` (Requires name, unique `courseCode`, `creditHours`, target `yearNumber` (StudyYear), optional list of department IDs, and optional list of prerequisite course IDs).
+    *   **Logic**: Validates department and prerequisite existences. Sets up many-to-many database relationships (prerequisites and department restrictions).
+*   **GET `/course/`**
+    *   **Authorization**: Admin & Student
+    *   **Query Filters**: `page` (default 1), `limit` (default 10), `search` (matches course name or code), `departmentId`, `yearNumber`, `creditHours`.
+    *   **Logic**: Retrieves a paginated list of courses filtered by the query parameters.
+*   **GET `/course/:id`**
+    *   **Authorization**: Admin & Student
+    *   **Logic**: Returns course details, including departments allowed to take the course and required prerequisite courses.
+*   **PUT `/course/:id`**
+    *   **Authorization**: Admin Only
+    *   **Validation**: `updateCourseSchema`
+    *   **Logic**: Updates course data and updates many-to-many relationship maps (prerequisites and department allocations).
+*   **DELETE `/course/:id`**
+    *   **Authorization**: Admin Only
+    *   **Logic**: Deletes the course from the curriculum, cascading deletion to dependent enrollment records.
+
+---
+
+### 5. Term Module (`src/moudles/Term`)
+Defines academic terms, sets enrollment registration window timelines, and manages courses offered per semester.
+
+*   **POST `/term/`**
+    *   **Authorization**: Admin Only
+    *   **Validation**: `createTermSchema` (Requires `academicYear` (regex format `YYYY/YYYY`), `semester` (FIRST, SECOND, SUMMER), and registration windows for each student level).
+    *   **Logic**: Ensures the term is unique. Creates the term and its registration windows in a database transaction.
+*   **GET `/term/`**
+    *   **Authorization**: Admin Only
+    *   **Logic**: Lists all academic terms, showing registration windows and student enrollment counts.
+*   **GET `/term/active`**
+    *   **Authorization**: Admin & Student
+    *   **Logic**: Returns the currently active term with the timeline status of all registration windows (upcoming, open, closed) relative to the current server date.
+*   **GET `/term/:id`**
+    *   **Authorization**: Admin Only
+    *   **Logic**: Retrieves a term's details, including registration windows and their timeline statuses.
+*   **PATCH `/term/:id/open`**
+    *   **Authorization**: Admin Only
+    *   **Logic**: Opens a term for registration. Enforces that:
+        1. The term has configured registration windows.
+        2. Any other open term is closed first (only one term can be active at a time).
+*   **PATCH `/term/:id/close`**
+    *   **Authorization**: Admin Only
+    *   **Logic**: Closes the active term, ending all registration.
+*   **POST `/term/:termId/windows`**
+    *   **Authorization**: Admin Only
+    *   **Validation**: `updateRegistrationWindowSchema`
+    *   **Logic**: Registers a registration window timeline for a specific student level in the term.
+*   **PATCH `/term/:termId/windows`**
+    *   **Authorization**: Admin Only
+    *   **Validation**: `updateRegistrationWindowSchema`
+    *   **Logic**: Updates the dates of a registration window.
+*   **POST `/term/:termId/courses`**
+    *   **Authorization**: Admin Only
+    *   **Validation**: `addCoursesToTermSchema` (Requires array of `courseIds`).
+    *   **Logic**: Links courses to the term (`TermCourse`), defining which courses are offered and available for student registration this term.
+*   **DELETE `/term/:termId/courses`**
+    *   **Authorization**: Admin Only
+    *   **Validation**: `removeCoursesFromTermSchema`
+    *   **Logic**: Unlinks courses from the term, removing them from the term's offerings.
+*   **GET `/term/:termId/courses`**
+    *   **Authorization**: Admin & Student
+    *   **Logic**: Lists all courses offered in the specified term.
+*   **PATCH `/term/:id/publish-grades`**
+    *   **Authorization**: Admin Only
+    *   **Logic**: Sets the `isGradesPublished` flag, allowing students to view their scores and final course marks.
+*   **PATCH `/term/:id/appeals-window`**
+    *   **Authorization**: Admin Only
+    *   **Validation**: `setAppealsWindowSchema` (Requires future date `endDate`).
+    *   **Logic**: Sets the deadline for grade appeals.
+
+---
+
+### 6. Enrollment Module (`src/moudles/Enrollment`)
+The core validation engine of the system. It handles course registrations and checks all academic requirements before enrolling a student.
+
+*   **POST `/enrollment/`**
+    *   **Authorization**: Student Only
+    *   **Validation**: `enrollSchema` (Requires `courseId`).
+    *   **Logic (Registration Constraints Engine)**:
+        1. **Term Verification**: Ensures an active term exists.
+        2. **Registration Window check**: Enforces that the current server date falls within the registration window defined for the student's level (`currentYear`).
+        3. **Course Offering check**: Confirms the course is offered in the active term.
+        4. **Double Enrollment check**: Prevents duplicate enrollment in the same term.
+        5. **Passed Courses check**: Blocks registration for a course the student has already passed in a previous semester.
+        6. **Department Restriction check**: If the course is restricted to specific departments, it ensures the student is assigned to one of them.
+        7. **Level Restriction check**: Restricts students from enrolling in courses above their year level (e.g., a Sophomore cannot take a Senior course).
+        8. **GPA Threshold check**: Checks if the student meets the minimum GPA required for their level (e.g. Sophomores: 1.0, Juniors: 1.5, Seniors: 2.0).
+        9. **Prerequisite completion check**: Verifies the student has passed all prerequisite courses (Grade $\neq$ 'F') in previous semesters.
+        10. **Credit Hour check**: Resolves the student's maximum allowed credits based on their GPA (`CreditRules`) and ensures that adding this course will not exceed that limit.
+*   **PATCH `/enrollment/:enrollmentId/drop`**
+    *   **Authorization**: Student Only
+    *   **Logic**: Drops a course (sets status to `DROPPED`). Allows dropping only if:
+        1. The term is active.
+        2. The registration window for the student's level is still open.
+        3. The course grade is not locked.
+*   **GET `/enrollment/my`**
+    *   **Authorization**: Student Only
+    *   **Logic**: Lists the logged-in student's current enrollments, total registered credits, max allowed credits, remaining credits, and registration window status.
+*   **GET `/enrollment/available`**
+    *   **Authorization**: Student Only
+    *   **Logic**: Calculates and lists courses available for the student to register. It filters out already passed and currently registered courses, includes failed courses (retakes), and enforces department and year level restrictions.
+*   **GET `/enrollment/`**
+    *   **Authorization**: Admin Only
+    *   **Query Filters**: `termId`, `studentId`
+    *   **Logic**: Lists all enrollments matching filters.
+
+---
+
+### 7. Grade Module (`src/moudles/Grade`)
+Manages academic grading. Computes GPAs, processes bulk imports, and enforces grading locks.
+
+*   **POST `/grade/`**
+    *   **Authorization**: Admin Only
+    *   **Validation**: `addGradeSchema` (Requires `enrollmentId` and `score` (0-100)).
+    *   **Logic**: Resolves the numerical score to a letter grade and GPA points using the `GradeScale` mapping. Saves the grade and triggers GPA recalculation.
+*   **POST `/grade/bulk`**
+    *   **Authorization**: Admin Only
+    *   **Payload**: CSV file (`file`), body fields (`termId`, `courseId`).
+    *   **Logic**: Processes a CSV file of student grades (`studentCode,score`). For each record, it maps the student code to their enrollment, resolves the score to a letter grade, and updates or creates the grade record. Recalculates student GPAs in batches of 30 for performance.
+*   **PATCH `/grade/:gradeId`**
+    *   **Authorization**: Admin Only
+    *   **Validation**: `updateGradeSchema` (Requires `score`).
+    *   **Logic**: Updates a grade and recalculates GPAs. Blocks updates if the grade is locked.
+*   **PATCH `/grade/:gradeId/lock`**
+    *   **Authorization**: Admin Only
+    *   **Logic**: Locks a grade, preventing any further updates.
+*   **PATCH `/grade/lock-all/:termId`**
+    *   **Authorization**: Admin Only
+    *   **Logic**: Locks all grades and term GPA records for a term. Blocks locking if the appeals window is still open.
+*   **GET `/grade/term/:termId`**
+    *   **Authorization**: Admin Only
+    *   **Logic**: Lists all grades recorded in the specified term.
+*   **GET `/grade/my`**
+    *   **Authorization**: Student Only
+    *   **Logic**: Displays the student's grades grouped by term, along with their cumulative GPA and completed credits. Only shows grades if the term's grades are published.
+
+#### 🧮 GPA Recalculation Engine
+Recalculations are triggered whenever a grade is added or updated. The process runs as follows:
+1. **Term GPA Calculation**: Sums the weighted GPA points of all graded courses in the term and divides by the total credit hours of those courses:
+   $$\text{Term GPA} = \frac{\sum (\text{Course Credit Hours} \times \text{Grade GPA Points})}{\sum \text{Course Credit Hours}}$$
+   Updates the student's `TermGpa` record.
+2. **Cumulative GPA Calculation**: Aggregates all graded courses across all semesters:
+   $$\text{Cumulative GPA} = \frac{\sum (\text{All Completed Course Credits} \times \text{Grade GPA Points})}{\sum \text{All Completed Course Credits}}$$
+   Updates the student's overall cumulative GPA in both `StudentGpa` and `Student` tables.
+
+---
+
+### 8. GradeScale Module (`src/moudles/Gradescale`)
+Defines the grading scale used to convert numerical scores into letter grades and GPA points.
+
+*   **POST `/grade-scale/`**
+    *   **Authorization**: Admin Only
+    *   **Validation**: `createGradeScaleSchema` (Requires `letterGrade`, `minScore`, `maxScore`, and `gpaPoints`).
+    *   **Logic**: Creates a grade scale. Enforces that the score range does not overlap with any existing scale.
+*   **POST `/grade-scale/bulk`**
+    *   **Authorization**: Admin Only
+    *   **Validation**: `bulkCreateGradeScaleSchema` (Requires an array of grade scale objects).
+    *   **Logic**: Replaces the entire grading scale in a single transaction. Validates that there are no duplicate letter grades or overlapping score ranges in the input.
+*   **GET `/grade-scale/`**
+    *   **Authorization**: Admin & Student
+    *   **Logic**: Retrieves all grade scales sorted by score range descending.
+*   **PATCH `/grade-scale/:id`**
+    *   **Authorization**: Admin Only
+    *   **Validation**: `updateGradeScaleSchema`
+    *   **Logic**: Updates a grade scale. Enforces range uniqueness and overlap checks.
+*   **DELETE `/grade-scale/all`**
+    *   **Authorization**: Admin Only
+    *   **Logic**: Deletes all configured grade scales.
+*   **DELETE `/grade-scale/:id`**
+    *   **Authorization**: Admin Only
+    *   **Logic**: Deletes a grade scale by its letter grade.
+
+---
+
+### 9. CreditRule Module (`src/moudles/Creditrule`)
+Defines the maximum credit hours a student can register for based on their GPA.
+
+*   **POST `/credit-rules/`**
+    *   **Authorization**: Admin Only
+    *   **Validation**: `createCreditRuleSchema` (Requires `minGpa`, `maxGpa`, `maxCredits`, and `isForNewStudents`).
+    *   **Logic**: Creates a credit rule. Enforces that the GPA range does not overlap with existing rules. If marked `isForNewStudents`, it disables any other active rule for new students.
+*   **GET `/credit-rules/`**
+    *   **Authorization**: Admin & Student
+    *   **Logic**: Lists all credit rules sorted by GPA range.
+*   **PATCH `/credit-rules/:id`**
+    *   **Authorization**: Admin Only
+    *   **Validation**: `updateCreditRuleSchema`
+    *   **Logic**: Updates a credit rule, enforcing overlap checks.
+*   **DELETE `/credit-rules/:id`**
+    *   **Authorization**: Admin Only
+    *   **Logic**: Deletes a credit rule.
+
+---
+
+### 10. Promotion Module (`src/moudles/Promotion`)
+Handles student academic level advancement (promotion) based on completed credits.
+
+*   **POST `/promotion/rules`**
+    *   **Authorization**: Admin Only
+    *   **Validation**: `createPromotionRuleSchema` (Requires `fromYear` and `minCredits`).
+    *   **Logic**: Creates a promotion rule. Blocks rules for `FOURTH_YEAR` since senior students graduate instead of promoting.
+*   **GET `/promotion/rules`**
+    *   **Authorization**: Admin Only
+    *   **Logic**: Lists all promotion rules.
+*   **PATCH `/promotion/rules/:id`**
+    *   **Authorization**: Admin Only
+    *   **Validation**: `updatePromotionRuleSchema`
+    *   **Logic**: Updates the minimum credits required for a promotion rule.
+*   **DELETE `/promotion/rules/:id`**
+    *   **Authorization**: Admin Only
+    *   **Logic**: Deletes a promotion rule.
+*   **POST `/promotion/execute`**
+    *   **Authorization**: Admin Only
+    *   **Logic**: Executes the promotion process. It scans all students below `FOURTH_YEAR`, counts their total passed credits (grades $\neq$ 'F'), and promotes eligible students to the next level. Returns lists of promoted and retained students.
+*   **GET `/promotion/preview`**
+    *   **Authorization**: Admin Only
+    *   **Logic**: Simulates the promotion process, returning a list of students who would be promoted or retained without updating the database.
+
+---
+
+### 11. AI Advisor Module (`src/moudles/AiAdvisor`)
+Provides personalized, AI-powered academic advising using the Gemini API.
+
+*   **POST `/ai-advisor/gpa-target`**
+    *   **Authorization**: Student Only
+    *   **Validation**: `gpaTargetSchema` (Requires a target cumulative GPA between 0.0 and 4.0).
+    *   **Logic (Gemini Advising Engine)**:
+        1. **Advising Data Preparation**: Gathers the student's current cumulative GPA, completed credits, actively registered courses, prerequisite dependencies, and the system grading scale.
+        2. **Feasibility Analysis**: Calculates the mathematical feasibility of the target:
+           $$\text{Max Possible GPA} = \frac{\text{Current GPA Points} + (4.0 \times \text{Active Credits})}{\text{Total Credits after Term}}$$
+        3. **AI Advising Response**: Sends this structured data to the Gemini 2.5 Flash model. The AI generates a friendly Arabic advising response containing:
+           *   **Feasibility**: Clear statement on whether the target is achievable. If not, it shows the maximum possible GPA they can reach.
+           *   **Target Grades**: The grades the student needs to aim for in each of their current courses.
+           *   **Prerequisite Warning**: A warning if failing any current course will block them from taking future dependent courses.
+           *   **Study Tips**: Three actionable study tips.
 
 ---
 
@@ -205,6 +525,10 @@ Create a `.env` file in the root directory and populate it with your environment
 PORT=5000
 DATABASE_URL="postgresql://postgres:yourpassword@localhost:5432/university_db?schema=public"
 JWT_SECRET="YOUR_SUPER_SECURE_JWT_SECRET_KEY"
+ACCESS_TOKEN="YOUR_ACCESS_TOKEN_SECRET"
+REFRESH_TOKEN="YOUR_REFRESH_TOKEN_SECRET"
+SALT_ROUND=12
+GEMINI_API_KEY="YOUR_GEMINI_API_KEY"
 ```
 
 ### 3. Installation Steps
@@ -215,8 +539,7 @@ Execute the following commands to install dependencies, run migrations, and laun
 npm install
 
 # 2. Sync database schema using Prisma
-npx prisma generate
-npx prisma db push
+npm run build
 
 # 3. Compile and run the TypeScript backend in development mode
 npm run start:dev
