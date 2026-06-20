@@ -220,23 +220,58 @@ class StudentService {
     });
   };
 
-
   getAllStudents = async (req: Request, res: Response, next: NextFunction) => {
-    const { departmentId, currentYear } = req.query;
+    const page = Number(req.query.page) || 1;
+    const limit = Number(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
 
-    const students = await prisma.student.findMany({
-      where: {
-        ...(departmentId && { departmentId: departmentId as string }),
-        ...(currentYear && { currentYear: currentYear as any }),
+    const { departmentId, currentYear, search } = req.query;
+
+    const whereClause: any = {};
+
+    if (departmentId) {
+      whereClause.departmentId = departmentId as string;
+    }
+
+    if (currentYear) {
+      whereClause.currentYear = currentYear as any;
+    }
+
+    if (search) {
+      whereClause.OR = [
+        { fullName: { contains: search as string, mode: "insensitive" } },
+        { studentCode: { contains: search as string, mode: "insensitive" } },
+        { nationalId: { contains: search as string, mode: "insensitive" } },
+      ];
+    }
+
+    const [students, totalCount] = await Promise.all([
+      prisma.student.findMany({
+        where: whereClause,
+        include: {
+          department: true,
+          studentGpa: true,
+        },
+        orderBy: { createdAt: "desc" },
+        skip,
+        take: limit,
+      }),
+      prisma.student.count({
+        where: whereClause,
+      }),
+    ]);
+
+    const totalPages = Math.ceil(totalCount / limit);
+
+    return res.status(200).json({
+      meta: {
+        totalCount,
+        totalPages,
+        currentPage: page,
+        limit,
       },
-      include: {
-        department: true,
-        studentGpa: true,
-      },
-      orderBy: { createdAt: "desc" },
+      students,
     });
-
-    return res.status(200).json({ count: students.length, students });
   };
 
 
