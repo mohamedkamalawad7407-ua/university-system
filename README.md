@@ -167,6 +167,8 @@ erDiagram
     COURSE }|..|{ DEPARTMENT : "belongs_to"
     TERM ||--o{ TERM_COURSE : "contains"
     COURSE ||--o{ TERM_COURSE : "offered_in"
+    COURSE }|..|{ COURSE : "prerequisites"
+    TERM ||--o{ TERM_GPA : "calculates"
 ```
 
 ---

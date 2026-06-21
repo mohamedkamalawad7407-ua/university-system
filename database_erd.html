@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Database ERD</title>
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({ startOnLoad: true, theme: 'neutral' });
+  </script>
+  <style>
+    body {
+      background-color: #ffffff;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin: 0;
+      padding: 40px;
+      font-family: sans-serif;
+    }
+    #diagram {
+      width: 100%;
+      display: flex;
+      justify-content: center;
+    }
+    svg {
+      max-width: 100% !important;
+      height: auto !important;
+    }
+  </style>
+</head>
+<body>
+  <div id="diagram" class="mermaid">
+    erDiagram
+        ADMIN {
+            string id PK
+            string email UK
+            string password
+            datetime createdAt
+        }
+        STUDENT {
+            string id PK
+            string studentCode UK
+            string nationalId UK
+            string fullName
+            StudyYear currentYear
+            decimal gpa
+            string departmentId FK
+            datetime createdAt
+        }
+        DEPARTMENT {
+            string id PK
+            string name UK
+            int maxStudents
+            decimal minGpa
+        }
+        COURSE {
+            string id PK
+            string name
+            string courseCode UK
+            int creditHours
+            StudyYear yearNumber
+        }
+        TERM {
+            string id PK
+            string academicYear
+            Semester semester
+            boolean isActive
+            boolean isGradesPublished
+            datetime appealsEndDate
+        }
+        REGISTRATION_WINDOW {
+            string id PK
+            string termId FK
+            StudyYear year
+            datetime startDate
+            datetime endDate
+        }
+        ENROLLMENT {
+            string id PK
+            string studentId FK
+            string courseId FK
+            string termId FK
+            EnrollmentStatus status
+            datetime createdAt
+        }
+        GRADE {
+            string id PK
+            string enrollmentId FK
+            string letterGrade
+            int score
+            decimal gpaPoints
+            boolean isLocked
+        }
+        TERM_GPA {
+            string id PK
+            string studentId FK
+            string termId FK
+            decimal gpa
+            int totalCredits
+            boolean isLocked
+        }
+        STUDENT_GPA {
+            string id PK
+            string studentId FK
+            decimal cumulativeGpa
+            int totalCredits
+        }
+        CREDIT_RULE {
+            string id PK
+            decimal minGpa
+            decimal maxGpa
+            int maxCredits
+            boolean isForNewStudents
+        }
+        PROMOTION_RULE {
+            string id PK
+            StudyYear fromYear UK
+            int minCredits
+        }
+        GRADE_SCALE {
+            string letterGrade PK
+            decimal minScore
+            decimal maxScore
+            decimal gpaPoints
+        }
+        TERM_COURSE {
+            string id PK
+            string termId FK
+            string courseId FK
+        }
+
+        DEPARTMENT ||--o{ STUDENT : "enrolls"
+        STUDENT ||--o{ ENROLLMENT : "creates"
+        STUDENT ||--o{ TERM_GPA : "records"
+        STUDENT ||--o| STUDENT_GPA : "maintains"
+        TERM ||--o{ REGISTRATION_WINDOW : "defines"
+        TERM ||--o{ ENROLLMENT : "hosts"
+        COURSE ||--o{ ENROLLMENT : "targets"
+        ENROLLMENT ||--o| GRADE : "earns"
+        COURSE }|..|{ DEPARTMENT : "belongs_to"
+        TERM ||--o{ TERM_COURSE : "contains"
+        COURSE ||--o{ TERM_COURSE : "offered_in"
+        COURSE }|..|{ COURSE : "prerequisites"
+        TERM ||--o{ TERM_GPA : "calculates"
+  </div>
+</body>
+</html>
