@@ -171,6 +171,91 @@ erDiagram
 
 ---
 
+## 📋 System Use Cases & Functional Requirements
+
+This section describes the core functional boundaries of the system through Use Cases (visualized using UML/Mermaid) and a detailed Functional Requirements specification.
+
+---
+
+### 1. System Use Cases (حالات الاستخدام)
+
+The system supports two primary actors:
+1. **System Administrator (Admin)**: Responsible for system configuration, academic rule management, student onboarding, grade auditing, and processing yearly promotions.
+2. **Student**: Interacts with the portal to view profiles, track academic performance, register/drop courses, and request AI-powered advising.
+
+#### 📊 Use Case Diagram
+```mermaid
+graph TD
+    subgraph Actors [المستخدمين]
+        A[Admin - مسؤول النظام]
+        S[Student - الطالب]
+    end
+    
+    subgraph AdminUC [حالات استخدام المسؤول]
+        UC1[Admin Auth <br> تسجيل الدخول للمسؤول]
+        UC2[Manage Students & PDF Bulk <br> إدارة الطلاب والرفع الجماعي]
+        UC3[Manage Departments & Assign Students <br> إدارة الأقسام وتوزيع الطلاب]
+        UC4[Manage Courses & Prerequisites <br> إدارة المواد والمتطلبات]
+        UC5[Manage Terms & Registration Windows <br> إدارة الفصول الدراسية وفترات التسجيل]
+        UC6[Record & Lock Grades CSV Bulk <br> رصد الدرجات وإغلاق التعديل]
+        UC7[Manage Academic Rules <br> إدارة القواعد الأكاديمية]
+        UC8[Execute Student Promotion <br> تنفيذ الترقية السنوية للطلاب]
+    end
+    
+    subgraph StudentUC [حالات استخدام الطالب]
+        UC9[Student Auth <br> تسجيل الدخول للطالب]
+        UC10[View Profile & Transcript <br> عرض الملف الشخصي وكشف الدرجات]
+        UC11[Check Available Courses <br> الاستعلام عن المواد المتاحة للتسجيل]
+        UC12[Enroll & Drop Courses <br> تسجيل وإسقاط المواد الدراسية]
+        UC13[Request AI Academic Advisor <br> طلب الاستشارة الأكاديمية بالذكاء الاصطناعي]
+    end
+    
+    A --> UC1
+    A --> UC2
+    A --> UC3
+    A --> UC4
+    A --> UC5
+    A --> UC6
+    A --> UC7
+    A --> UC8
+    
+    S --> UC9
+    S --> UC10
+    S --> UC11
+    S --> UC12
+    S --> UC13
+```
+
+---
+
+### 2. Functional Requirements Table (جدول المتطلبات الوظيفية)
+
+Below is the structured list of all functional requirements mapped to their respective modules, user roles, priorities, and associated business rules.
+
+| Requirement ID | Module | Functional Requirement Description | Actor | Priority | Business Rules & Constraints (القواعد والقيود البرمجية) |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **FR-01** | Admin | Create administrator accounts and authenticate securely. | Admin | High | Password must be $\ge$ 8 characters, containing uppercase, lowercase, and a number. |
+| **FR-02** | Student | Authenticate students using their credentials. | Student | High | Log in using `studentCode` and `nationalId` (14-digit verification). |
+| **FR-03** | Student | Register new students manually or in bulk. | Admin | High | Manual input via `addStudentSchema`. Bulk creation parses PDF logs. Validates department capacities. |
+| **FR-04** | Department | Create and manage academic departments with capacity and GPA thresholds. | Admin | High | Cannot reduce `maxStudents` below currently assigned students. |
+| **FR-05** | Department | Assign or remove students from departments. | Admin | High | Must satisfy `minGpa` requirements (except first-year) and department capacity constraints. |
+| **FR-06** | Course | Manage the university curriculum and define course metadata. | Admin | High | `courseCode` must be unique. Set credit hours, year level, and prerequisite maps. |
+| **FR-07** | Term | Manage semesters and year-level registration windows. | Admin | High | Only one term can be `isActive` at a time. Registration windows enforce timelines by student level. |
+| **FR-08** | Term | Bind specific courses to the active semester offerings. | Admin | High | Only courses defined in the active term can be enrolled in. |
+| **FR-09** | Enrollment | Calculate and list eligible courses available for registration. | Student | High | Excludes passed/active courses. Enforces department, level, and prerequisite completion (Grade $\ne$ 'F'). |
+| **FR-10** | Enrollment | Enroll in offered courses. | Student | High | Validates: active registration window, prerequisites met, GPA thresholds, credit limit not exceeded. |
+| **FR-11** | Enrollment | Drop active semester courses. | Student | High | Allowed only if the registration window is open and the course grade has not been locked. |
+| **FR-12** | Grade | Define and manage grading scales. | Admin | High | Maps scores (0-100) to letters (e.g., A, B) and GPA points. Prevents overlapping score ranges. |
+| **FR-13** | Grade | Input student grades individually or via bulk CSV upload. | Admin | High | Triggers automatic database recalculations of term GPA and cumulative GPA. |
+| **FR-14** | Grade | Publish semester grades and manage grade appeals windows. | Admin | Medium | Students cannot view grades until published. Appeals are blocked after the deadline. |
+| **FR-15** | Grade | Lock term grades permanently. | Admin | High | Disables editing or uploading grades. Allowed only after the appeals window is closed. |
+| **FR-16** | Credit Rules | Set maximum credit hour limits based on GPA ranges. | Admin | High | Defines limits for new vs. existing students. Prevents overlapping rules. |
+| **FR-17** | Promotion | Set minimum credit requirements for year-to-year promotion. | Admin | High | Defines threshold per year level. (Cannot define promotion rules for graduates). |
+| **FR-18** | Promotion | Execute student academic level promotion. | Admin | High | Scans students; promotes if accumulated credits $\ge$ threshold; otherwise, student is retained. |
+| **FR-19** | AI Advisor | Generate Gemini-powered personalized advising reports. | Student | Medium | Analyzes current GPA and active courses. Evaluates target feasibility; returns advising in Arabic. |
+
+---
+
 ## 🛠️ Global Middleware & Custom Utilities
 
 ### 1. Security & Guards Middleware
