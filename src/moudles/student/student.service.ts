@@ -291,7 +291,88 @@ class StudentService {
     });
 
     if (!student) throw new AppError("student not found", 404);
-    return res.status(200).json({ student });
+
+    // 1. Graded / Completed Courses
+    const gradedCourses = student.enrollments
+      .filter((e) => e.grade !== null)
+      .map((e) => ({
+        enrollmentId: e.id,
+        courseId: e.course.id,
+        courseName: e.course.name,
+        courseCode: e.course.courseCode,
+        creditHours: e.course.creditHours,
+        year: e.course.yearNumber,
+        termYear: e.term.academicYear,
+        semester: e.term.semester,
+        score: e.grade?.score,
+        letterGrade: e.grade?.letterGrade,
+        gpaPoints: e.grade?.gpaPoints,
+        isLocked: e.grade?.isLocked,
+        status: e.status,
+      }));
+
+    // 2. Active Courses (enrolled in current active term, not graded yet)
+    const activeCourses = student.enrollments
+      .filter((e) => e.status === "ENROLLED" && e.grade === null)
+      .map((e) => ({
+        enrollmentId: e.id,
+        courseId: e.course.id,
+        courseName: e.course.name,
+        courseCode: e.course.courseCode,
+        creditHours: e.course.creditHours,
+        year: e.course.yearNumber,
+        termYear: e.term.academicYear,
+        semester: e.term.semester,
+        status: e.status,
+      }));
+
+    // 3. Dropped Courses
+    const droppedCourses = student.enrollments
+      .filter((e) => e.status === "DROPPED")
+      .map((e) => ({
+        enrollmentId: e.id,
+        courseId: e.course.id,
+        courseName: e.course.name,
+        courseCode: e.course.courseCode,
+        creditHours: e.course.creditHours,
+        year: e.course.yearNumber,
+        termYear: e.term.academicYear,
+        semester: e.term.semester,
+        status: e.status,
+      }));
+
+    // 4. Term GPA history
+    const termGpaHistory = student.termGpas.map((tg) => ({
+      termId: tg.termId,
+      academicYear: tg.term.academicYear,
+      semester: tg.term.semester,
+      gpa: tg.gpa,
+      totalCredits: tg.totalCredits,
+      isLocked: tg.isLocked,
+    }));
+
+    return res.status(200).json({
+      student: {
+        id: student.id,
+        studentCode: student.studentCode,
+        nationalId: student.nationalId,
+        fullName: student.fullName,
+        currentYear: student.currentYear,
+        department: student.department ? {
+          id: student.department.id,
+          name: student.department.name,
+          minGpa: student.department.minGpa,
+          maxStudents: student.department.maxStudents,
+        } : null,
+        cumulativeGpa: student.studentGpa?.cumulativeGpa ?? 0,
+        totalCredits: student.studentGpa?.totalCredits ?? 0,
+        createdAt: student.createdAt,
+      },
+      gradedCourses,
+      activeCourses,
+      droppedCourses,
+      termGpaHistory,
+    });
   };
 
 

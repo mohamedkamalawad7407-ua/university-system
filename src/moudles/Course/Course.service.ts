@@ -74,8 +74,7 @@ class CourseService {
     if (search) {
       whereClause.OR = [
         { name: { contains: search as string, mode: "insensitive" } },
-        { courseCode: { contains: search as string, mode: "insensitive" } },
-        { yearNumber: { contains: search as string, mode: "insensitive" } }
+        { courseCode: { contains: search as string, mode: "insensitive" } }
       ];
     }
 
