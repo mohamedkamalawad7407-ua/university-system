@@ -25,208 +25,194 @@ class EnrollmentService {
     const { courseId }: enrollSchemaType = req.body;
     const studentId = (req.user as any).id;
 
+    try {
+      const result = await prisma.$transaction(async (tx) => {
+        // Apply pessimistic lock on the student row to prevent concurrent race conditions
+        await tx.$executeRawUnsafe(
+          `SELECT id FROM "Student" WHERE id = $1 FOR UPDATE`,
+          studentId
+        );
 
-    const activeTerm = await prisma.term.findFirst({
-      where: { isActive: true },
-      include: { registrationWindows: true },
-    });
-    if (!activeTerm) throw new AppError("no active term, enrollment is closed", 400);
+        const activeTerm = await tx.term.findFirst({
+          where: { isActive: true },
+          include: { registrationWindows: true },
+        });
+        if (!activeTerm) throw new AppError("no active term, enrollment is closed", 400);
 
-
-    const student = await prisma.student.findUnique({
-      where: { id: studentId },
-      include: {
-        studentGpa: true,
-        department: { include: { courses: true } },
-      },
-    });
-    if (!student) throw new AppError("student not found", 404);
-
-
-    const now = new Date();
-    const studentWindow = activeTerm.registrationWindows.find(
-      (w) => w.year === student.currentYear
-    );
-
-    if (!studentWindow) {
-      throw new AppError(
-        `no registration window configured for ${student.currentYear} in this term`,
-        400
-      );
-    }
-
-    if (now < studentWindow.startDate) {
-      throw new AppError(
-        `registration for ${student.currentYear} has not started yet, opens on ${studentWindow.startDate.toISOString()}`,
-        400
-      );
-    }
-
-    if (now > studentWindow.endDate) {
-      throw new AppError(
-        `registration deadline for ${student.currentYear} has passed (closed on ${studentWindow.endDate.toISOString()})`,
-        400
-      );
-    }
-
-
-    const course = await prisma.course.findUnique({
-      where: { id: courseId },
-      include: { departments: true, prerequisites: true },
-    });
-    if (!course) throw new AppError("course not found", 404);
-
-
-    const isOffered = await prisma.termCourse.findUnique({
-      where: { termId_courseId: { termId: activeTerm.id, courseId } },
-    });
-    if (!isOffered) throw new AppError("course is not offered in this term", 400);
-
-    const existingEnrollment = await prisma.enrollment.findUnique({
-      where: {
-        studentId_courseId_termId: {
-          studentId,
-          courseId,
-          termId: activeTerm.id,
-        },
-      },
-    });
-    if (existingEnrollment) {
-      throw new AppError("you are already enrolled in this course for this term", 400);
-    }
-
-    const alreadyPassed = await prisma.enrollment.findFirst({
-      where: {
-        studentId,
-        courseId,
-        grade: {
-          isLocked: true,
-          letterGrade: { not: "F" },
-        },
-      },
-    });
-    if (alreadyPassed) {
-      throw new AppError("you have already passed this course", 400);
-    }
-
-
-    if (course.departments.length > 0) {
-      const courseInDept = course.departments.some((d) => d.id === student.departmentId);
-      if (!courseInDept) {
-        throw new AppError("course not available for your department", 403);
-      }
-    }
-
-
-    const studentYearNum = yearOrder[student.currentYear];
-    const courseYearNum = yearOrder[course.yearNumber];
-    if (courseYearNum > studentYearNum) {
-      throw new AppError(
-        `this course is for ${course.yearNumber}, you are in ${student.currentYear}`,
-        400
-      );
-    }
-
-
-    const currentGpa = Number(student.studentGpa?.cumulativeGpa ?? 0);
-    const requiredGpa = minGpaForYear[student.currentYear];
-    if (currentGpa < requiredGpa) {
-      throw new AppError(
-        `your GPA ${currentGpa} is below the minimum ${requiredGpa} required for ${student.currentYear}`,
-        400
-      );
-    }
-
-
-    if (course.prerequisites.length > 0) {
-      const passedEnrollments = await prisma.enrollment.findMany({
-        where: {
-          studentId,
-          courseId: { in: course.prerequisites.map((p) => p.id) },
-          status: "ENROLLED",
-          grade: {
-            letterGrade: { not: "F" },
-            isLocked: true,
+        const student = await tx.student.findUnique({
+          where: { id: studentId },
+          include: {
+            studentGpa: true,
+            department: { include: { courses: true } },
           },
-        },
-        select: { courseId: true },
-      });
+        });
+        if (!student) throw new AppError("student not found", 404);
 
-      const passedIds = passedEnrollments.map((e) => e.courseId);
-      const missing = course.prerequisites.filter((p) => !passedIds.includes(p.id));
-
-      if (missing.length > 0) {
-        throw new AppError(
-          `you must pass these courses first: ${missing.map((m) => m.courseCode).join(", ")}`,
-          400
+        const now = new Date();
+        const studentWindow = activeTerm.registrationWindows.find(
+          (w) => w.year === student.currentYear
         );
-      }
-    }
 
+        if (!studentWindow) {
+          throw new AppError(
+            `no registration window configured for ${student.currentYear} in this term`,
+            400
+          );
+        }
 
-    const hasGpaRecord = !!student.studentGpa;
-    let creditRule;
+        if (now < studentWindow.startDate) {
+          throw new AppError(
+            `registration for ${student.currentYear} has not started yet, opens on ${studentWindow.startDate.toISOString()}`,
+            400
+          );
+        }
 
-    if (!hasGpaRecord && student.currentYear === "FIRST_YEAR") {
-      creditRule = await prisma.creditRule.findFirst({
-        where: { isForNewStudents: true }
+        if (now > studentWindow.endDate) {
+          throw new AppError(
+            `registration deadline for ${student.currentYear} has passed (closed on ${studentWindow.endDate.toISOString()})`,
+            400
+          );
+        }
+
+        const course = await tx.course.findUnique({
+          where: { id: courseId },
+          include: { departments: true, prerequisites: true },
+        });
+        if (!course) throw new AppError("course not found", 404);
+
+        const isOffered = await tx.termCourse.findUnique({
+          where: { termId_courseId: { termId: activeTerm.id, courseId } },
+        });
+        if (!isOffered) throw new AppError("course is not offered in this term", 400);
+
+        const existingEnrollment = await tx.enrollment.findUnique({
+          where: {
+            studentId_courseId_termId: {
+              studentId,
+              courseId,
+              termId: activeTerm.id,
+            },
+          },
+        });
+        if (existingEnrollment) {
+          throw new AppError("you are already enrolled in this course for this term", 400);
+        }
+
+        const alreadyPassed = await tx.enrollment.findFirst({
+          where: {
+            studentId,
+            courseId,
+            grade: {
+              isLocked: true,
+              letterGrade: { not: "F" },
+            },
+          },
+        });
+        if (alreadyPassed) {
+          throw new AppError("you have already passed this course", 400);
+        }
+
+        if (course.departments.length > 0) {
+          const courseInDept = course.departments.some((d) => d.id === student.departmentId);
+          if (!courseInDept) {
+            throw new AppError("course not available for your department", 403);
+          }
+        }
+
+        const studentYearNum = yearOrder[student.currentYear];
+        const courseYearNum = yearOrder[course.yearNumber];
+        if (courseYearNum > studentYearNum) {
+          throw new AppError(
+            `this course is for ${course.yearNumber}, you are in ${student.currentYear}`,
+            400
+          );
+        }
+
+        const currentGpa = Number(student.studentGpa?.cumulativeGpa ?? 0);
+        const requiredGpa = minGpaForYear[student.currentYear];
+        if (currentGpa < requiredGpa) {
+          throw new AppError(
+            `your GPA ${currentGpa} is below the minimum ${requiredGpa} required for ${student.currentYear}`,
+            400
+          );
+        }
+
+        if (course.prerequisites.length > 0) {
+          const passedEnrollments = await tx.enrollment.findMany({
+            where: {
+              studentId,
+              courseId: { in: course.prerequisites.map((p) => p.id) },
+              status: "ENROLLED",
+              grade: {
+                letterGrade: { not: "F" },
+                isLocked: true,
+              },
+            },
+            select: { courseId: true },
+          });
+
+          const passedIds = passedEnrollments.map((e) => e.courseId);
+          const missing = course.prerequisites.filter((p) => !passedIds.includes(p.id));
+
+          if (missing.length > 0) {
+            throw new AppError(
+              `you must pass these courses first: ${missing.map((m) => m.courseCode).join(", ")}`,
+              400
+            );
+          }
+        }
+
+        const hasGpaRecord = !!student.studentGpa;
+        let creditRule;
+
+        if (!hasGpaRecord && student.currentYear === "FIRST_YEAR") {
+          creditRule = await tx.creditRule.findFirst({
+            where: { isForNewStudents: true }
+          });
+        }
+
+        if (!creditRule) {
+          creditRule = await tx.creditRule.findFirst({
+            where: {
+              isForNewStudents: false,
+              minGpa: { lte: currentGpa },
+              OR: [{ maxGpa: null }, { maxGpa: { gt: currentGpa } }],
+            },
+            orderBy: { minGpa: "desc" },
+          });
+        }
+
+        if (creditRule) {
+          const currentTermEnrollments = await tx.enrollment.findMany({
+            where: { studentId, termId: activeTerm.id, status: "ENROLLED" },
+            include: { course: { select: { creditHours: true } } },
+          });
+
+          const enrolledCredits = currentTermEnrollments.reduce(
+            (sum, e) => sum + e.course.creditHours,
+            0
+          );
+
+          if (enrolledCredits + course.creditHours > creditRule.maxCredits) {
+            throw new AppError(
+              `cannot exceed ${creditRule.maxCredits} credit hours (enrolled: ${enrolledCredits}, adding: ${course.creditHours})`,
+              400
+            );
+          }
+        }
+
+        const enrollment = await tx.enrollment.create({
+          data: { studentId, courseId, termId: activeTerm.id },
+          include: { course: true, term: true },
+        });
+
+        return enrollment;
       });
+
+      return res.status(201).json({ message: "enrolled successfully", enrollment: result });
+    } catch (error) {
+      next(error);
     }
-
-    if (!creditRule) {
-      creditRule = await prisma.creditRule.findFirst({
-        where: {
-          isForNewStudents: false,
-          minGpa: { lte: currentGpa },
-          OR: [{ maxGpa: null }, { maxGpa: { gt: currentGpa } }],
-        },
-        orderBy: { minGpa: "desc" },
-      });
-    }
-
-    if (creditRule) {
-      const currentTermEnrollments = await prisma.enrollment.findMany({
-        where: { studentId, termId: activeTerm.id, status: "ENROLLED" },
-        include: { course: { select: { creditHours: true } } },
-      });
-
-      const enrolledCredits = currentTermEnrollments.reduce(
-        (sum, e) => sum + e.course.creditHours,
-        0
-      );
-
-      if (enrolledCredits + course.creditHours > creditRule.maxCredits) {
-        throw new AppError(
-          `cannot exceed ${creditRule.maxCredits} credit hours (enrolled: ${enrolledCredits}, adding: ${course.creditHours})`,
-          400
-        );
-      }
-    }
-
-
-    const alreadyEnrolled = await prisma.enrollment.findUnique({
-      where: {
-        studentId_courseId_termId: { studentId, courseId, termId: activeTerm.id },
-      },
-    });
-    if (alreadyEnrolled) throw new AppError("already enrolled in this course", 409);
-
-
-    const passed = await prisma.enrollment.findFirst({
-      where: {
-        studentId,
-        courseId,
-        grade: { letterGrade: { not: "F" }, isLocked: true },
-      },
-    });
-    if (passed) throw new AppError("you already passed this course", 400);
-
-    const enrollment = await prisma.enrollment.create({
-      data: { studentId, courseId, termId: activeTerm.id },
-      include: { course: true, term: true },
-    });
-
-    return res.status(201).json({ message: "enrolled successfully", enrollment });
   };
 
 
@@ -277,7 +263,7 @@ class EnrollmentService {
       include: { registrationWindows: true },
     });
 
-    const enrollments = activeTerm
+    const enrollments = (activeTerm && !activeTerm.isGradesPublished)
       ? await prisma.enrollment.findMany({
           where: { studentId, termId: activeTerm.id, status: "ENROLLED" },
           include: { course: true, grade: true },
